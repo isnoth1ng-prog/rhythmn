@@ -1,5 +1,7 @@
 import SwiftUI
 import AVFoundation
+import AVFAudio
+import ActivityKit
 
 private struct Track: Identifiable, Hashable {
     let id: String
@@ -10,7 +12,7 @@ private struct Track: Identifiable, Hashable {
     static let sample = Track(
         id: "saints-pd",
         title: "When the Saints Go Marching In",
-        artist: "Traditional · public domain recording",
+        artist: "Traditional",
         genre: "Folk",
         audioURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/transcoded/0/06/When_the_Saints_Go_Marching_In.ogg/When_the_Saints_Go_Marching_In.ogg.mp3")!
     )
@@ -36,6 +38,7 @@ struct ContentView: View {
     @State private var tab: Tab = .library
     @State private var query = ""
     @State private var playerOpen = false
+    @State private var artistOpen = false
     @State private var lyricsVisible = true
     @State private var isPlaying = false
     @State private var player: AVPlayer?
@@ -59,26 +62,22 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             background.ignoresSafeArea()
-            VStack(spacing: 0) {
-                header
-                Group {
-                    switch tab {
-                    case .library: library
-                    case .search: search
-                    case .wave: waveView
-                    case .settings: settings
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                miniPlayer
-                tabBar
+            TabView(selection: $tab) {
+                library.tabItem { Label(Tab.library.rawValue, systemImage: Tab.library.icon) }.tag(Tab.library)
+                search.tabItem { Label(Tab.search.rawValue, systemImage: Tab.search.icon) }.tag(Tab.search)
+                waveView.tabItem { Label(Tab.wave.rawValue, systemImage: Tab.wave.icon) }.tag(Tab.wave)
+                settings.tabItem { Label(Tab.settings.rawValue, systemImage: Tab.settings.icon) }.tag(Tab.settings)
             }
+            .tint(accent)
+            .toolbarBackground(dark ? Color.black : Color.white, for: .tabBar)
+            .toolbarBackground(.visible, for: .tabBar)
+            .safeAreaInset(edge: .bottom, spacing: 0) { miniPlayer }
         }
         .foregroundStyle(ink)
         .preferredColorScheme(dark ? .dark : .light)
-        .statusBarHidden(false)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .fullScreenCover(isPresented: $playerOpen) { fullPlayer }
-        .onDisappear { player?.pause() }
+        .sheet(isPresented: $artistOpen) { artistSheet }
     }
 
     private var background: some View {
@@ -106,8 +105,6 @@ struct ContentView: View {
                 Text(saved ? "СОХРАНЕНО" : "ТЕСТОВЫЙ ТРЕК")
                     .font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(1.5).foregroundStyle(muted)
                 trackRow(.sample)
-                Text("Запись мелодии находится в общественном достоянии. Источник: Wikimedia Commons.")
-                    .font(.system(size: 11)).foregroundStyle(muted)
             }.padding(20)
         }
     }
@@ -235,7 +232,7 @@ struct ContentView: View {
                             .shadow(color: accent.opacity(0.2), radius: 32, y: 16).padding(.top, 17)
                         VStack(spacing: 7) {
                             Text(track.title).font(.system(size: 23, weight: .bold, design: .rounded)).multilineTextAlignment(.center)
-                            Text(track.artist).font(.system(size: 13)).foregroundStyle(accent)
+                            Button { artistOpen = true } label: { Text(track.artist).font(.system(size: 13, weight: .medium)).foregroundStyle(accent) }
                         }
                         HStack(spacing: 28) {
                             Image(systemName: "shuffle").foregroundStyle(muted)
@@ -259,21 +256,21 @@ struct ContentView: View {
                         }
                         .font(.system(size: 13, weight: .semibold)).foregroundStyle(accent)
                         if lyricsVisible {
-                            VStack(alignment: .leading, spacing: 15) {
-                                Text("ТЕКСТ ПЕСНИ · TRADITIONAL").font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(1.5).foregroundStyle(muted)
-                                Text("Oh, when the saints go marching in,")
-                                Text("Oh, when the saints go marching in,")
-                                Text("Lord, I want to be in that number,")
-                                Text("When the saints go marching in.")
-                                    .foregroundStyle(accent)
+                            TimelineView(.animation(minimumInterval: 0.35, paused: !isPlaying)) { timeline in
+                                let active = Int(timeline.date.timeIntervalSinceReferenceDate / 2.4) % 4
+                                VStack(alignment: .leading, spacing: 15) {
+                                    Text("ТЕКСТ ПЕСНИ").font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(1.5).foregroundStyle(muted)
+                                    lyricLine("Oh, when the saints go marching in,", index: 0, active: active)
+                                    lyricLine("Oh, when the saints go marching in,", index: 1, active: active)
+                                    lyricLine("Lord, I want to be in that number,", index: 2, active: active)
+                                    lyricLine("When the saints go marching in.", index: 3, active: active)
+                                }
+                                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(18).background(panel, in: RoundedRectangle(cornerRadius: 20))
                             }
-                            .font(.system(size: 20, weight: .semibold, design: .rounded))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(18).background(panel, in: RoundedRectangle(cornerRadius: 20))
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
-                        Text("Запись: Wikimedia Commons · public domain. Текст — традиционный общеизвестный вариант песни; запись инструментальная.")
-                            .font(.system(size: 10)).foregroundStyle(muted).frame(maxWidth: .infinity, alignment: .leading)
                     }.padding(.horizontal, 23).padding(.bottom, 26)
                 }
             }
@@ -296,10 +293,91 @@ struct ContentView: View {
         .padding(10).background(panel, in: RoundedRectangle(cornerRadius: 17))
     }
 
+
+    private func lyricLine(_ text: String, index: Int, active: Int) -> some View {
+        Text(text)
+            .foregroundStyle(index == active ? accent : ink.opacity(index < active ? 0.42 : 0.76))
+            .scaleEffect(index == active ? 1.02 : 1, anchor: .leading)
+            .animation(.easeInOut(duration: 0.4), value: active)
+    }
+
+    private var artistSheet: some View {
+        NavigationStack {
+            List {
+                Section {
+                    HStack(spacing: 14) {
+                        Artwork(size: 64, accent: accent)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(track.artist).font(.title3.weight(.semibold))
+                            Text("Исполнитель").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }.padding(.vertical, 8)
+                }
+                Section("Дискография") {
+                    Button {
+                        artistOpen = false
+                        playerOpen = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Artwork(size: 48, accent: accent)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(track.title).foregroundStyle(.primary)
+                                Text("Традиционная песня").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "play.fill").foregroundStyle(accent)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(track.artist)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { Button("Готово") { artistOpen = false } }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func startLiveActivity() {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        Task {
+            for activity in Activity<RhythmPlaybackAttributes>.activities {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+            do {
+                _ = try Activity.request(
+                    attributes: RhythmPlaybackAttributes(trackTitle: track.title, artist: track.artist),
+                    content: ActivityContent(state: RhythmPlaybackAttributes.ContentState(isPlaying: true), staleDate: nil),
+                    pushType: nil
+                )
+            } catch { print("Live Activity could not start: \\(error)") }
+        }
+    }
+
+    private func updateLiveActivity(isPlaying: Bool) {
+        Task {
+            for activity in Activity<RhythmPlaybackAttributes>.activities {
+                await activity.update(ActivityContent(state: RhythmPlaybackAttributes.ContentState(isPlaying: isPlaying), staleDate: nil))
+            }
+        }
+    }
+
     private func togglePlayback() {
         if player == nil { player = AVPlayer(url: track.audioURL) }
-        if isPlaying { player?.pause() } else { player?.play() }
-        isPlaying.toggle()
+        if isPlaying {
+            player?.pause()
+            isPlaying = false
+            updateLiveActivity(isPlaying: false)
+        } else {
+            do {
+                try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+                try AVAudioSession.sharedInstance().setActive(true)
+            } catch { print("Audio session setup failed: \\(error)") }
+            player?.play()
+            isPlaying = true
+            startLiveActivity()
+        }
     }
 
     private func refreshWave() {
