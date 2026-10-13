@@ -12,7 +12,7 @@ private struct Track: Identifiable, Hashable {
         title: "When the Saints Go Marching In",
         artist: "Traditional · public domain recording",
         genre: "Folk",
-        audioURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/transcoded/2/2b/When_the_Saints_Go_Marching_In.ogg/When_the_Saints_Go_Marching_In.ogg.mp3")!
+        audioURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/transcoded/0/06/When_the_Saints_Go_Marching_In.ogg/When_the_Saints_Go_Marching_In.ogg.mp3")!
     )
 }
 
