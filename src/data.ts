@@ -1,9 +1,11 @@
-export type Track = { id: string; title: string; artist: string; album: string; duration: number; art: string; source: string; demo?: boolean };
+export type Track = { id: string; title: string; artist: string; album: string; duration: number; art: string; source: string; audioUrl?: string; demo?: boolean };
 export const SAMPLE_TRACK: Track = {
-  id: "sample-scarborough", title: "Scarborough Fair", artist: "Traditional Folk Song",
-  album: "Public-domain listening test", duration: 214,
+  id: "sample-scarborough", title: "Scarborough Fair", artist: "Traditional · recording by Makemi",
+  album: "Public-domain folk recording", duration: 168,
   art: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=1000&q=85",
-  source: "Development sample", demo: true
+  source: "Wikimedia Commons · CC BY-SA 3.0 / GFDL",
+  audioUrl: "https://upload.wikimedia.org/wikipedia/commons/transcoded/a/a4/Scarborough_Fair.ogg/Scarborough_Fair.ogg.mp3",
+  demo: true
 };
 export const STARTER_TRACKS: Track[] = [
   SAMPLE_TRACK,
@@ -11,7 +13,7 @@ export const STARTER_TRACKS: Track[] = [
   { id: "demo-low-tide", title: "Low Tide", artist: "Northbound", album: "Low Tide", duration: 231, art: "https://images.unsplash.com/photo-1470252649378-9c29740c9fa8?w=600&q=80", source: "Demo", demo: true },
   { id: "demo-after-rain", title: "After the Rain", artist: "Mira Vale", album: "Soft Focus", duration: 186, art: "https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=600&q=80", source: "Demo", demo: true }
 ];
-// Traditional folk lyrics are public domain. These lines are demonstration text, not synced lyrics from a commercial recording.
+// The folk song is traditional/public-domain; lyric timing below is approximate UI-test timing, not provider-synchronized metadata.
 export const SAMPLE_LYRICS = [
   { time: 0, text: "Are you going to Scarborough Fair?" },
   { time: 18, text: "Parsley, sage, rosemary and thyme" },
