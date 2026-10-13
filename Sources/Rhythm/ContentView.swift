@@ -175,23 +175,32 @@ struct ContentView: View {
     }
 
     private var miniPlayer: some View {
-        Button { playerOpen = true } label: {
-            HStack(spacing: 12) {
-                Artwork(size: 42, accent: accent)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(track.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                    Text(track.artist).font(.system(size: 10)).foregroundStyle(muted).lineLimit(1)
+        HStack(spacing: 11) {
+            Button { playerOpen = true } label: {
+                HStack(spacing: 11) {
+                    Artwork(size: 38, accent: accent)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(track.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                        Text(track.artist).font(.system(size: 10)).foregroundStyle(muted).lineLimit(1)
+                    }
                 }
-                Spacer()
-                Button(action: togglePlayback) {
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 17, weight: .bold)).foregroundStyle(accent).frame(width: 42, height: 42)
-                }.buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(10).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 17))
-            .overlay(RoundedRectangle(cornerRadius: 17).stroke(ink.opacity(0.08)))
-            .padding(.horizontal, 14).padding(.top, 7).padding(.bottom, 6)
-        }.buttonStyle(.plain)
+            .buttonStyle(.plain)
+            Button(action: togglePlayback) {
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 16, weight: .bold)).foregroundStyle(accent)
+                    .frame(width: 42, height: 42)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isPlaying ? "Пауза" : "Воспроизвести")
+        }
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15))
+        .overlay(RoundedRectangle(cornerRadius: 15).stroke(ink.opacity(0.08)))
+        .padding(.horizontal, 14).padding(.top, 6).padding(.bottom, 4)
+        .background(dark ? Color.black : Color.white)
     }
 
     private var tabBar: some View {
