@@ -42,3 +42,12 @@ G. Local library/history/likes, tests and EAS builds.
 - My Wave requests recommendations dynamically once provider integration is implemented.
 - Demo content is clearly labelled.
 - Errors and blocked tracks are handled honestly.
+
+
+## Iteration: native iOS player
+
+- Navigation now uses the native iOS tab bar; the mini-player sits directly above it. The root view expands to the available window instead of constraining itself to a card.
+- The expanded player animates the active lyric line. Artist names open a discography sheet.
+- Playback uses AVAudioSession playback mode and declares the audio background mode. Playback metadata is exposed through a WidgetKit Live Activity and Dynamic Island.
+- The app icon is generated for each Actions build from a new record-shaped Rhythm mark.
+- This prototype still contains one public-domain instrumental sample, so its traditional lyrics are an animation/demo fixture rather than synchronized lyrics. New catalog recommendations and real lyric timing require a connected music/lyrics provider.
