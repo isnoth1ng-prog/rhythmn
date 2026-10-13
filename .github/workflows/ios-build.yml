@@ -16,6 +16,9 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Generate app icon
+        run: swift Scripts/generate_app_icon.swift
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
