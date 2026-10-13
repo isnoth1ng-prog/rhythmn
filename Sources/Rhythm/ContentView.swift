@@ -174,6 +174,7 @@ struct ContentView: View {
                         .font(.system(size: 16))
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .onSubmit { recordSearchEvent(searchText) }
                     if !searchText.isEmpty {
                         Button { searchText = "" } label: {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(.white.opacity(0.45))
