@@ -627,6 +627,14 @@ struct ContentView: View {
         savedTracks = ids.sorted().joined(separator: ",")
     }
 
+    private func readCounts(_ encoded: String) -> [String: Int] {
+        Dictionary(uniqueKeysWithValues: encoded.split(separator: ",").compactMap { entry -> (String, Int)? in
+            let pair = entry.split(separator: ":", maxSplits: 1)
+            guard pair.count == 2, let count = Int(pair[1]) else { return nil }
+            return (String(pair[0]), count)
+        })
+    }
+
     private func recordPlayEvent(for id: String, increment: Bool) {
         guard increment else { return }
         var counts = Dictionary(uniqueKeysWithValues: playCounts.split(separator: ",").compactMap { entry -> (String, Int)? in
