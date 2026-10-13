@@ -339,12 +339,17 @@ struct ContentView: View {
 
     private var recommendedTracks: [Track] {
         let favoriteGenres = Track.demo.filter { savedIDs.contains($0.id) }.map(\.genre)
-        if favoriteGenres.isEmpty { return Track.demo.shuffled().prefix(4).sorted { $0.title < $1.title } }
-        return Track.demo.sorted {
-            let left = favoriteGenres.filter { $0 == $0 }.count
-            let right = favoriteGenres.filter { $0 == $1.genre }.count
-            return left > right
-        }.filter { !savedIDs.contains($0.id) }.prefix(4).map { $0 }
+        let plays = readCounts(playCounts)
+        return Track.demo
+            .filter { !savedIDs.contains($0.id) }
+            .sorted { left, right in
+                let leftScore = favoriteGenres.filter { $0 == left.genre }.count * 3 + plays[left.id, default: 0]
+                let rightScore = favoriteGenres.filter { $0 == right.genre }.count * 3 + plays[right.id, default: 0]
+                if leftScore == rightScore { return left.title < right.title }
+                return leftScore > rightScore
+            }
+            .prefix(4)
+            .map { $0 }
     }
 
     private var settingsScreen: some View {
@@ -559,10 +564,7 @@ struct ContentView: View {
                     Artwork(track: track, size: 52)
                     VStack(alignment: .leading, spacing: 5) {
                         Text(track.title).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
-                        Button { artistPage = track.artist } label: {
-                            Text(track.artist).font(.system(size: 11)).foregroundStyle(accent.opacity(0.88))
-                        }
-                        .buttonStyle(.plain)
+                        Text(track.artist).font(.system(size: 11)).foregroundStyle(accent.opacity(0.88))
                     }
                     Spacer(minLength: 2)
                 }
