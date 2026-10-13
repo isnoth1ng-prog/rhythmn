@@ -260,11 +260,11 @@ struct ContentView: View {
                         .font(.system(size: 13, weight: .semibold)).foregroundStyle(accent)
                         if lyricsVisible {
                             VStack(alignment: .leading, spacing: 15) {
-                                Text("ТЕКСТ ДЛЯ ПРОВЕРКИ").font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(1.5).foregroundStyle(muted)
-                                Text("Ночь зажигает огни,")
-                                Text("Город ловит новый ритм,")
-                                Text("Мы плывём за тёплым светом,")
-                                Text("Пока музыка звучит.")
+                                Text("ТЕКСТ ПЕСНИ · TRADITIONAL").font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(1.5).foregroundStyle(muted)
+                                Text("Oh, when the saints go marching in,")
+                                Text("Oh, when the saints go marching in,")
+                                Text("Lord, I want to be in that number,")
+                                Text("When the saints go marching in.")
                                     .foregroundStyle(accent)
                             }
                             .font(.system(size: 20, weight: .semibold, design: .rounded))
@@ -272,7 +272,7 @@ struct ContentView: View {
                             .padding(18).background(panel, in: RoundedRectangle(cornerRadius: 20))
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
-                        Text("Запись: Wikimedia Commons · public domain. Текст выше написан для Rhythm и не является текстом этой инструментальной записи.")
+                        Text("Запись: Wikimedia Commons · public domain. Текст — традиционный общеизвестный вариант песни; запись инструментальная.")
                             .font(.system(size: 10)).foregroundStyle(muted).frame(maxWidth: .infinity, alignment: .leading)
                     }.padding(.horizontal, 23).padding(.bottom, 26)
                 }
