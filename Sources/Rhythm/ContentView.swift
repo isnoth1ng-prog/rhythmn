@@ -41,6 +41,7 @@ private enum AppTab: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @AppStorage("rhythm.savedTracks") private var savedTracks = ""
     @AppStorage("rhythm.playCounts") private var playCounts = ""
+    @AppStorage("rhythm.searchCounts") private var searchCounts = ""
     @AppStorage("rhythm.accent") private var accentName = "Мята"
     @State private var tab: AppTab = .library
     @State private var currentTrackID = Track.demo[0].id
@@ -340,11 +341,12 @@ struct ContentView: View {
     private var recommendedTracks: [Track] {
         let favoriteGenres = Track.demo.filter { savedIDs.contains($0.id) }.map(\.genre)
         let plays = readCounts(playCounts)
+        let searches = readCounts(searchCounts)
         return Track.demo
             .filter { !savedIDs.contains($0.id) }
             .sorted { left, right in
-                let leftScore = favoriteGenres.filter { $0 == left.genre }.count * 3 + plays[left.id, default: 0]
-                let rightScore = favoriteGenres.filter { $0 == right.genre }.count * 3 + plays[right.id, default: 0]
+                let leftScore = favoriteGenres.filter { $0 == left.genre }.count * 3 + plays[left.id, default: 0] + searches[left.id, default: 0] * 2
+                let rightScore = favoriteGenres.filter { $0 == right.genre }.count * 3 + plays[right.id, default: 0] + searches[right.id, default: 0] * 2
                 if leftScore == rightScore { return left.title < right.title }
                 return leftScore > rightScore
             }
@@ -633,6 +635,17 @@ struct ContentView: View {
         })
         counts[id, default: 0] += 1
         playCounts = counts.map { "\($0.key):\($0.value)" }.sorted().joined(separator: ",")
+    }
+
+    private func recordSearchEvent(_ query: String) {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+        let matches = Track.demo.filter {
+            $0.title.localizedCaseInsensitiveContains(normalized) || $0.artist.localizedCaseInsensitiveContains(normalized)
+        }
+        var counts = readCounts(searchCounts)
+        for track in matches { counts[track.id, default: 0] += 1 }
+        searchCounts = counts.map { "\($0.key):\($0.value)" }.sorted().joined(separator: ",")
     }
 
     private func timeString(_ seconds: Int) -> String {
