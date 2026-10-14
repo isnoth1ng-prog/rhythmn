@@ -44,6 +44,8 @@ struct ContentView: View {
     @State private var player: AVPlayer?
     @State private var wave: [Track] = [.sample]
     @State private var waveIndex = 0
+    @State private var isShuffling = false
+    @State private var repeatsTrack = false
 
     private var track: Track { wave.indices.contains(waveIndex) ? wave[waveIndex] : .sample }
     private var dark: Bool { appearance == "Тёмная" }
@@ -78,6 +80,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .fullScreenCover(isPresented: $playerOpen) { fullPlayer }
         .sheet(isPresented: $artistOpen) { artistSheet }
+        .task { await RhythmActivityController.endAll() }
     }
 
     private var background: some View {
@@ -99,17 +102,98 @@ struct ContentView: View {
     }
 
     private var library: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 22) {
+                header
                 title("Моя музыка", subtitle: "Треки, к которым хочется вернуться")
-                Text(saved ? "СОХРАНЕНО" : "ТЕСТОВЫЙ ТРЕК")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(1.5).foregroundStyle(muted)
-                trackRow(.sample)
-            }.padding(20)
+
+                HStack(spacing: 14) {
+                    Artwork(size: 78, accent: accent)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("ПРОДОЛЖАЙ СЛУШАТЬ")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .tracking(1.2)
+                            .foregroundStyle(muted)
+                        Text(Track.sample.title)
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .lineLimit(2)
+                        Text(Track.sample.artist)
+                            .font(.system(size: 12))
+                            .foregroundStyle(muted)
+                    }
+                    Spacer(minLength: 2)
+                    Button {
+                        wave = [.sample]
+                        waveIndex = 0
+                        playerOpen = true
+                        if !isPlaying { togglePlayback() }
+                    } label: {
+                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(dark ? .black : .white)
+                            .frame(width: 46, height: 46)
+                            .background(accent, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(isPlaying ? "Пауза" : "Воспроизвести")
+                }
+                .padding(15)
+                .background(
+                    LinearGradient(colors: [accent.opacity(0.22), panel], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 23)
+                )
+                .overlay(RoundedRectangle(cornerRadius: 23).stroke(ink.opacity(0.07)))
+
+                HStack {
+                    Text("ТВОЯ КОЛЛЕКЦИЯ")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .tracking(1.5)
+                        .foregroundStyle(muted)
+                    Spacer()
+                    Text(saved ? "1 ТРЕК" : "1 ТРЕК")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(accent)
+                }
+
+                HStack(spacing: 12) {
+                    collectionCard(icon: "heart.fill", title: "Любимые", detail: saved ? "1 трек" : "Пока пусто", tint: accent)
+                    collectionCard(icon: "clock.fill", title: "Недавно", detail: "1 прослушивание", tint: .cyan)
+                }
+
+                VStack(alignment: .leading, spacing: 13) {
+                    HStack {
+                        Text("Тестовый трек")
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                        Spacer()
+                        Button { tab = .search } label: {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundStyle(accent)
+                                .frame(width: 36, height: 36)
+                                .background(panel, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    trackRow(.sample)
+                }
+
+                HStack(spacing: 10) {
+                    Image(systemName: "sparkles").foregroundStyle(accent)
+                    Text("Новые треки и рекомендации появятся здесь, когда подключим музыкальный каталог.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(panel.opacity(0.75), in: RoundedRectangle(cornerRadius: 16))
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
     }
 
-    private var search: some View {
+        private var search: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 title("Поиск", subtitle: "Ищи треки и авторов")
@@ -222,69 +306,166 @@ struct ContentView: View {
     }
 
     private var fullPlayer: some View {
-        ZStack {
-            background.ignoresSafeArea()
-            VStack(spacing: 0) {
-                HStack {
-                    Button { playerOpen = false } label: {
-                        Image(systemName: "chevron.down").font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(ink).frame(width: 44, height: 44)
+        GeometryReader { geometry in
+            let artworkSize = min(252, min(geometry.size.width - 76, geometry.size.height * 0.31))
+            ZStack {
+                background.ignoresSafeArea()
+                VStack(spacing: 0) {
+                    HStack {
+                        Button { playerOpen = false } label: {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(ink)
+                                .frame(width: 44, height: 44)
+                                .background(panel, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        Spacer()
+                        Text("СЕЙЧАС ИГРАЕТ")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .tracking(1.6)
+                            .foregroundStyle(muted)
+                        Spacer()
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(ink)
+                            .frame(width: 44, height: 44)
                     }
-                    Spacer()
-                    Text("СЕЙЧАС ИГРАЕТ").font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(1.5).foregroundStyle(muted)
-                    Spacer()
-                    Image(systemName: "ellipsis").foregroundStyle(ink).frame(width: 44, height: 44)
-                }.padding(.horizontal, 16)
-                ScrollView {
-                    VStack(spacing: 21) {
-                        Artwork(size: 280, accent: accent)
-                            .shadow(color: accent.opacity(0.2), radius: 32, y: 16).padding(.top, 17)
-                        VStack(spacing: 7) {
-                            Text(track.title).font(.system(size: 23, weight: .bold, design: .rounded)).multilineTextAlignment(.center)
-                            Button { artistOpen = true } label: { Text(track.artist).font(.system(size: 13, weight: .medium)).foregroundStyle(accent) }
-                        }
-                        HStack(spacing: 28) {
-                            Image(systemName: "shuffle").foregroundStyle(muted)
-                            Image(systemName: "backward.end.fill").font(.system(size: 23))
-                            Button(action: togglePlayback) {
-                                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                    .font(.system(size: 23, weight: .bold)).foregroundStyle(dark ? .black : .white)
-                                    .frame(width: 66, height: 66).background(accent, in: Circle())
-                            }
-                            Image(systemName: "forward.end.fill").font(.system(size: 23))
-                            Image(systemName: "repeat").foregroundStyle(muted)
-                        }.buttonStyle(.plain)
-                        HStack {
-                            Button { saved.toggle() } label: {
-                                Label(saved ? "В библиотеке" : "Сохранить", systemImage: saved ? "checkmark" : "plus")
-                            }
-                            Spacer()
-                            Button { withAnimation(.spring(duration: 0.35)) { lyricsVisible.toggle() } } label: {
-                                Label(lyricsVisible ? "Скрыть текст" : "Текст", systemImage: "quote.bubble")
-                            }
-                        }
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(accent)
-                        if lyricsVisible {
-                            TimelineView(.animation(minimumInterval: 0.35, paused: !isPlaying)) { timeline in
-                                let active = Int(timeline.date.timeIntervalSinceReferenceDate / 2.4) % 4
-                                VStack(alignment: .leading, spacing: 15) {
-                                    Text("ТЕКСТ ПЕСНИ").font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(1.5).foregroundStyle(muted)
-                                    lyricLine("Oh, when the saints go marching in,", index: 0, active: active)
-                                    lyricLine("Oh, when the saints go marching in,", index: 1, active: active)
-                                    lyricLine("Lord, I want to be in that number,", index: 2, active: active)
-                                    lyricLine("When the saints go marching in.", index: 3, active: active)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 6)
+
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 16) {
+                            Artwork(size: artworkSize, accent: accent)
+                                .shadow(color: accent.opacity(0.2), radius: 26, y: 12)
+                                .padding(.top, 10)
+
+                            VStack(spacing: 5) {
+                                Text(track.title)
+                                    .font(.system(size: 21, weight: .bold, design: .rounded))
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(2)
+                                Button { artistOpen = true } label: {
+                                    Text(track.artist)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(accent)
                                 }
-                                .font(.system(size: 20, weight: .semibold, design: .rounded))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(18).background(panel, in: RoundedRectangle(cornerRadius: 20))
+                                .buttonStyle(.plain)
                             }
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .padding(.horizontal, 8)
+
+                            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                                let rawTime = player?.currentTime().seconds ?? 0
+                                let rawDuration = player?.currentItem?.duration.seconds ?? 0
+                                let elapsed = rawTime.isFinite ? max(0, rawTime) : 0
+                                let total = rawDuration.isFinite && rawDuration > 0 ? rawDuration : 1
+                                VStack(spacing: 4) {
+                                    Slider(
+                                        value: Binding(
+                                            get: { min(elapsed, total) },
+                                            set: { player?.seek(to: CMTime(seconds: $0, preferredTimescale: 600)) }
+                                        ),
+                                        in: 0...total
+                                    )
+                                    .tint(accent)
+                                    HStack {
+                                        Text(timeLabel(elapsed))
+                                        Spacer()
+                                        Text(timeLabel(total))
+                                    }
+                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(muted)
+                                }
+                            }
+
+                            HStack(spacing: 0) {
+                                playerModeButton("shuffle", selected: isShuffling) { isShuffling.toggle() }
+                                Spacer()
+                                playerControl("backward.end.fill", size: 19) { }
+                                Spacer()
+                                Button(action: togglePlayback) {
+                                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                                        .font(.system(size: 22, weight: .bold))
+                                        .foregroundStyle(dark ? .black : .white)
+                                        .frame(width: 62, height: 62)
+                                        .background(accent, in: Circle())
+                                        .shadow(color: accent.opacity(0.28), radius: 14, y: 6)
+                                }
+                                .buttonStyle(.plain)
+                                Spacer()
+                                playerControl("forward.end.fill", size: 19) { }
+                                Spacer()
+                                playerModeButton("repeat", selected: repeatsTrack) { repeatsTrack.toggle() }
+                            }
+                            .padding(.horizontal, 2)
+
+                            HStack {
+                                Button { saved.toggle() } label: {
+                                    Label(saved ? "Сохранено" : "В медиатеку", systemImage: saved ? "checkmark" : "plus")
+                                }
+                                Spacer()
+                                Button { withAnimation(.spring(duration: 0.35)) { lyricsVisible.toggle() } } label: {
+                                    Label(lyricsVisible ? "Скрыть текст" : "Текст", systemImage: "quote.bubble")
+                                }
+                            }
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(accent)
+                            .buttonStyle(.plain)
+                            .padding(.top, 2)
+
+                            if lyricsVisible {
+                                TimelineView(.animation(minimumInterval: 0.35, paused: !isPlaying)) { timeline in
+                                    let active = Int(timeline.date.timeIntervalSinceReferenceDate / 2.4) % 4
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        HStack {
+                                            Text("ТЕКСТ ПЕСНИ")
+                                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                                .tracking(1.5)
+                                                .foregroundStyle(muted)
+                                            Spacer()
+                                            Image(systemName: "waveform")
+                                                .font(.system(size: 13, weight: .semibold))
+                                                .foregroundStyle(accent.opacity(0.75))
+                                        }
+                                        lyricLine("Oh, when the saints go marching in,", index: 0, active: active)
+                                        lyricLine("Oh, when the saints go marching in,", index: 1, active: active)
+                                        lyricLine("Lord, I want to be in that number,", index: 2, active: active)
+                                        lyricLine("When the saints go marching in.", index: 3, active: active)
+                                    }
+                                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(16)
+                                    .background(panel, in: RoundedRectangle(cornerRadius: 20))
+                                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(ink.opacity(0.06)))
+                                }
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                            }
                         }
-                    }.padding(.horizontal, 23).padding(.bottom, 26)
+                        .padding(.horizontal, 22)
+                        .padding(.top, 4)
+                        .padding(.bottom, 24)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .preferredColorScheme(dark ? .dark : .light)
+    }
+
+        private func collectionCard(icon: String, title: String, detail: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 34, height: 34)
+                .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 11))
+            Text(title).font(.system(size: 13, weight: .semibold))
+            Text(detail).font(.system(size: 10)).foregroundStyle(muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(panel, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(ink.opacity(0.06)))
     }
 
     private func trackRow(_ item: Track) -> some View {
@@ -349,27 +530,38 @@ struct ContentView: View {
     }
 
     private func startLiveActivity() {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        Task {
-            for activity in Activity<RhythmPlaybackAttributes>.activities {
-                await activity.end(nil, dismissalPolicy: .immediate)
-            }
-            do {
-                _ = try Activity.request(
-                    attributes: RhythmPlaybackAttributes(trackTitle: track.title, artist: track.artist),
-                    content: ActivityContent(state: RhythmPlaybackAttributes.ContentState(isPlaying: true), staleDate: nil),
-                    pushType: nil
-                )
-            } catch { print("Live Activity could not start: \\(error)") }
-        }
+        Task { await RhythmActivityController.start(trackTitle: track.title, artist: track.artist) }
     }
 
-    private func updateLiveActivity(isPlaying: Bool) {
-        Task {
-            for activity in Activity<RhythmPlaybackAttributes>.activities {
-                await activity.update(ActivityContent(state: RhythmPlaybackAttributes.ContentState(isPlaying: isPlaying), staleDate: nil))
-            }
+    private func endLiveActivity() {
+        Task { await RhythmActivityController.endAll() }
+    }
+
+    private func timeLabel(_ seconds: Double) -> String {
+        let value = seconds.isFinite ? max(0, Int(seconds)) : 0
+        return String(format: "%d:%02d", value / 60, value % 60)
+    }
+
+    private func playerControl(_ icon: String, size: CGFloat, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: size, weight: .semibold))
+                .foregroundStyle(ink)
+                .frame(width: 38, height: 44)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+    }
+
+    private func playerModeButton(_ icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(selected ? accent : muted)
+                .frame(width: 30, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func togglePlayback() {
@@ -377,7 +569,7 @@ struct ContentView: View {
         if isPlaying {
             player?.pause()
             isPlaying = false
-            updateLiveActivity(isPlaying: false)
+            endLiveActivity()
         } else {
             do {
                 try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
