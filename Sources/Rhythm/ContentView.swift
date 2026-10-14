@@ -142,7 +142,6 @@ private struct ScreenIntro: View {
 }
 
 private struct LibraryScreen: View {
-private struct LibraryScreen: View {
     @ObservedObject var model: RhythmAppModel
     let openPlayer: () -> Void
     let openPlaylist: (String) -> Void

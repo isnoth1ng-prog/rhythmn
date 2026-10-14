@@ -1,3 +1,5 @@
+import SwiftUI
+
 struct HomeScreen: View {
     @ObservedObject var model: RhythmAppModel
     let openPlayer: () -> Void
