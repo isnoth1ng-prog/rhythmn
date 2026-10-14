@@ -552,7 +552,8 @@ private struct WaveScreen: View {
                 }
 
                 VStack(spacing: 5) {
-                    ForEach(Array(model.waveQueue.enumerated()), id: \.element.id) { index, track in
+                    ForEach(model.waveQueue.indices, id: \.self) { index in
+                        let track = model.waveQueue[index]
                         TrackRow(model: model, track: track, onPlay: {
                             model.playFromWave(track)
                             openPlayer()
@@ -627,7 +628,8 @@ private struct WaveformGlyph: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 4) {
-            ForEach(Array(heights.enumerated()), id: \.offset) { index, height in
+            ForEach(heights.indices, id: \.self) { index in
+                let height = heights[index]
                 Capsule()
                     .fill(accent.opacity(index.isMultiple(of: 3) ? 1 : 0.62))
                     .frame(width: 4, height: height)

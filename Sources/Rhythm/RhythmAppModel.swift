@@ -395,7 +395,7 @@ final class RhythmAppModel: ObservableObject {
             playbackNotice = nil
             recordPlayed(track)
             await RhythmActivityController.start(trackTitle: track.title, artist: track.artist)
-            if let lyrics = try? await source.lyrics(for: track{
+            if let lyrics = try? await source.lyrics(for: track) {
                 currentLyrics = lyrics
             }
         } catch {
