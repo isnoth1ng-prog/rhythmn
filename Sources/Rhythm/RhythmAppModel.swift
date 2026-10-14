@@ -81,6 +81,10 @@ enum RhythmTab: String, CaseIterable, Identifiable {
 @MainActor
 final class RhythmAppModel: ObservableObject {
     @Published private(set) var tracks: [Track] = DemoCatalog.tracks
+    @Published private(set) var catalogSearchResults: [Track] = []
+    @Published private(set) var catalogSearchMessage: String?
+    @Published private(set) var isSearchingCatalog = false
+    @Published private(set) var didSearchCatalog = false
     @Published private(set) var savedIDs: Set<String>
     @Published private(set) var likedIDs: Set<String>
     @Published private(set) var recentIDs: [String]
@@ -111,9 +115,11 @@ final class RhythmAppModel: ObservableObject {
     private var endObserver: NSObjectProtocol?
     private var queue = PlaybackQueue()
     private var activeRequest = UUID()
+    private var catalogSearchRequest = UUID()
 
-    init(source: MusicSource = DemoMusicSource()) {
+    init(source: MusicSource = MusicKitMusicSource()) {
         self.source = source
+        tracks = Self.load([Track].self, key: "rhythm.v2.catalogCache", fallback: DemoCatalog.tracks)
         savedIDs = Self.load(Set<String>.self, key: "rhythm.v2.saved", fallback: [])
         likedIDs = Self.load(Set<String>.self, key: "rhythm.v2.liked", fallback: [])
         recentIDs = Self.load([String].self, key: "rhythm.v2.recent", fallback: [])
@@ -170,8 +176,79 @@ final class RhythmAppModel: ObservableObject {
     func searchArtists(_ query: String) -> [ArtistProfile] {
         let needle = Self.normalized(query)
         guard !needle.isEmpty else { return [] }
-        return DemoCatalog.artists.filter {
-            Self.normalized("\($0.name) \($0.note)").contains(needle)
+        let artistIDs = Set(tracks.map(\.artistID))
+        return artistIDs.compactMap { artistID in
+            let track = tracks.first { $0.artistID == artistID }
+            let known = DemoCatalog.artists.first { $0.id == artistID }
+            let profile = known ?? track.map {
+                ArtistProfile(
+                    id: artistID,
+                    name: $0.artist,
+                    note: $0.audioSource == .appleMusicPreview ? "Apple Music" : "Исполнитель Rhythm",
+                    tone: $0.tone
+                )
+            }
+            guard let profile,
+                  Self.normalized("\(profile.name) \(profile.note)").contains(needle) else { return nil }
+            return profile
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    func artistProfile(id: String) -> ArtistProfile? {
+        if let known = DemoCatalog.artists.first(where: { $0.id == id }) { return known }
+        guard let track = tracks.first(where: { $0.artistID == id }) else { return nil }
+        return ArtistProfile(
+            id: id,
+            name: track.artist,
+            note: track.audioSource == .appleMusicPreview ? "Apple Music" : "Исполнитель Rhythm",
+            tone: track.tone
+        )
+    }
+
+    func clearCatalogSearch() {
+        catalogSearchRequest = UUID()
+        catalogSearchResults = []
+        catalogSearchMessage = nil
+        isSearchingCatalog = false
+        didSearchCatalog = false
+    }
+
+    func searchCatalog(_ query: String) async {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else {
+            clearCatalogSearch()
+            return
+        }
+
+        let requestID = UUID()
+        catalogSearchRequest = requestID
+        isSearchingCatalog = true
+        catalogSearchMessage = nil
+        didSearchCatalog = false
+        defer {
+            if catalogSearchRequest == requestID {
+                isSearchingCatalog = false
+            }
+        }
+
+        do {
+            let results = try await source.searchCatalog(term)
+            guard catalogSearchRequest == requestID else { return }
+            catalogSearchResults = results
+            didSearchCatalog = true
+            if results.isEmpty {
+                catalogSearchMessage = "В Apple Music не нашлось треков по этому запросу. Ниже показан локальный демо-каталог."
+                return
+            }
+            let resultIDs = Set(results.map(\.id))
+            tracks = Array((results + tracks.filter { !resultIDs.contains($0.id) }).prefix(500))
+            Self.save(tracks, key: "rhythm.v2.catalogCache")
+        } catch {
+            guard catalogSearchRequest == requestID else { return }
+            catalogSearchResults = []
+            didSearchCatalog = true
+            catalogSearchMessage = "Apple Music сейчас недоступен: \(error.localizedDescription) Локальный демо-каталог остаётся доступен."
         }
     }
 
@@ -330,7 +407,9 @@ final class RhythmAppModel: ObservableObject {
         do {
             let loaded = try await source.loadCatalog()
             guard !loaded.isEmpty else { return }
-            tracks = loaded
+            let loadedIDs = Set(loaded.map(\.id))
+            tracks = Array((loaded + tracks.filter { !loadedIDs.contains($0.id) }).prefix(500))
+            Self.save(tracks, key: "rhythm.v2.catalogCache")
             refreshWave()
         } catch {
             playbackNotice = "Не удалось загрузить каталог: \(error.localizedDescription)"
@@ -351,7 +430,9 @@ final class RhythmAppModel: ObservableObject {
             guard let url else {
                 clearPlayer()
                 isPlaying = false
-                playbackNotice = "Аудиоисточник не подключён. Этот экран готов к подключению через MusicSource.swift."
+                playbackNotice = track.audioSource == .appleMusicPreview
+                    ? "У этого результата нет доступного аудиопревью Apple Music."
+                    : "Демо-каталог содержит только тестовые метаданные. Найди трек в Apple Music, чтобы послушать доступное превью."
                 RhythmNowPlayingController.update(track: track, playbackTime: 0, duration: track.duration, isPlaying: false)
                 await RhythmActivityController.endAll()
                 do {

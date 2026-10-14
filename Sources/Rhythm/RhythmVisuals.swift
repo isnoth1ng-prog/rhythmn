@@ -58,23 +58,33 @@ struct TrackArtwork: View {
         GeometryReader { geometry in
             let side = min(geometry.size.width, geometry.size.height)
             ZStack {
-                LinearGradient(colors: track.tone.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                if let artworkURL = track.artworkURL {
+                    AsyncImage(url: artworkURL) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        LinearGradient(colors: track.tone.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                    }
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+                } else {
+                    LinearGradient(colors: track.tone.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
 
-                Circle()
-                    .stroke(.white.opacity(0.14), lineWidth: max(1, side * 0.004))
-                    .frame(width: side * 0.82, height: side * 0.82)
-                    .offset(x: side * 0.22, y: -side * 0.24)
+                    Circle()
+                        .stroke(.white.opacity(0.14), lineWidth: max(1, side * 0.004))
+                        .frame(width: side * 0.82, height: side * 0.82)
+                        .offset(x: side * 0.22, y: -side * 0.24)
 
-                Circle()
-                    .fill(.white.opacity(0.10))
-                    .frame(width: side * 0.48, height: side * 0.48)
-                    .blur(radius: side * 0.05)
-                    .offset(x: -side * 0.27, y: side * 0.29)
+                    Circle()
+                        .fill(.white.opacity(0.10))
+                        .frame(width: side * 0.48, height: side * 0.48)
+                        .blur(radius: side * 0.05)
+                        .offset(x: -side * 0.27, y: side * 0.29)
 
-                Image(systemName: "waveform")
-                    .font(.system(size: side * 0.23, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.86))
-                    .shadow(color: .black.opacity(0.18), radius: side * 0.04, y: side * 0.02)
+                    Image(systemName: "waveform")
+                        .font(.system(size: side * 0.23, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.86))
+                        .shadow(color: .black.opacity(0.18), radius: side * 0.04, y: side * 0.02)
+                }
 
                 if showsTitle {
                     VStack(alignment: .leading, spacing: side * 0.018) {

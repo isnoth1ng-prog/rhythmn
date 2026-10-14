@@ -347,7 +347,9 @@ private struct SearchScreen: View {
 
     private var light: Bool { model.appearance == .light }
     private var filteredTracks: [Track] {
-        let results = model.searchTracks(query)
+        let results = model.didSearchCatalog && !model.catalogSearchResults.isEmpty
+            ? model.catalogSearchResults
+            : model.searchTracks(query)
         switch filter {
         case .all, .tracks:
             return results
@@ -457,8 +459,27 @@ private struct SearchScreen: View {
                         }
                     }
 
+                    if model.isSearchingCatalog {
+                        HStack(spacing: 9) {
+                            ProgressView().tint(model.accent.color)
+                            Text("Ищем в Apple Music")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(RhythmPalette.muted(light))
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    if let message = model.catalogSearchMessage {
+                        Text(message)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(RhythmPalette.muted(light))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RhythmPalette.surface(light), in: RoundedRectangle(cornerRadius: 15))
+                    }
+
                     VStack(alignment: .leading, spacing: 12) {
-                        SectionHeading(title: "Треки", light: light)
+                        SectionHeading(title: model.didSearchCatalog && !model.catalogSearchResults.isEmpty ? "Apple Music" : "Треки", light: light)
                         if filteredTracks.isEmpty {
                             EmptyPanel(title: "Ничего не найдено", message: "Попробуй другое название или исполнителя.", actionTitle: nil, action: nil, model: model)
                         } else {
@@ -489,6 +510,20 @@ private struct SearchScreen: View {
         }
         .scrollIndicators(.hidden)
         .scrollDismissesKeyboard(.interactively)
+        .task(id: query) {
+            let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !term.isEmpty else {
+                model.clearCatalogSearch()
+                return
+            }
+            do {
+                try await Task.sleep(for: .milliseconds(350))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await model.searchCatalog(term)
+        }
     }
 }
 

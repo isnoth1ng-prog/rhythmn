@@ -23,6 +23,11 @@ enum ArtworkTone: String, CaseIterable, Codable, Hashable {
     case glacier, ember, orchid, moss, cobalt, amber, rose, graphite
 }
 
+enum TrackAudioSource: String, Codable, Hashable {
+    case demo
+    case appleMusicPreview
+}
+
 struct Track: Identifiable, Codable, Hashable {
     let id: String
     let title: String
@@ -33,6 +38,9 @@ struct Track: Identifiable, Codable, Hashable {
     let tags: [String]
     let tone: ArtworkTone
     let lyrics: [LyricLine]
+    var artworkURL: URL? = nil
+    var audioPreviewURL: URL? = nil
+    var audioSource: TrackAudioSource = .demo
 }
 
 struct ArtistProfile: Identifiable, Hashable {

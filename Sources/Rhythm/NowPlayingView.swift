@@ -359,7 +359,7 @@ struct ArtistDiscographyView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var light: Bool { model.appearance == .light }
-    private var artist: ArtistProfile? { DemoCatalog.artist(id: artistID) }
+    private var artist: ArtistProfile? { model.artistProfile(id: artistID) }
     private var discography: [Track] { model.tracks(for: artistID) }
 
     var body: some View {
