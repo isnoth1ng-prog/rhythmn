@@ -225,22 +225,13 @@ final class RhythmAppModel: ObservableObject {
     }
 
     func refreshWave() {
-        let likedTags = likedTracks.flatMap(\.tags)
-        let historyTags = recentlyPlayed.prefix(4).flatMap(\.tags)
-        var candidates = tracks.filter { !recentIDs.prefix(3).contains($0.id) }
-        if candidates.isEmpty { candidates = tracks }
-
-        waveQueue = candidates
-            .map { track -> (Track, Double) in
-                var score = Double.random(in: 0...0.8)
-                if waveMood != "Случайно", track.tags.contains(waveMood) { score += 4 }
-                score += Double(likedTags.filter { track.tags.contains($0) }.count) * 1.7
-                score += Double(historyTags.filter { track.tags.contains($0) }.count) * 0.35
-                score -= Double(playCounts[track.id, default: 0]) * 0.4
-                return (track, score)
-            }
-            .sorted { $0.1 > $1.1 }
-            .map(\.0)
+        waveQueue = LocalRecommendationEngine.rank(
+            tracks: tracks,
+            mood: waveMood,
+            likedIDs: likedIDs,
+            recentIDs: recentIDs,
+            playCounts: playCounts
+        )
     }
 
     func playFromWave(_ track: Track) {
