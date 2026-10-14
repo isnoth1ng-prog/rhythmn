@@ -54,18 +54,6 @@ enum AccentTone: String, CaseIterable, Identifiable {
     }
 }
 
-enum RepeatMode: String {
-    case off, all, one
-
-    var icon: String {
-        switch self {
-        case .off: "repeat"
-        case .all: "repeat"
-        case .one: "repeat.1"
-        }
-    }
-}
-
 enum RhythmTab: String, CaseIterable, Identifiable {
     case library, search, wave, settings
 

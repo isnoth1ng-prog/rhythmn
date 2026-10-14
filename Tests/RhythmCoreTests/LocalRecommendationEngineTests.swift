@@ -1,5 +1,5 @@
 import XCTest
-@testable import Rhythm
+@testable import RhythmCore
 
 final class LocalRecommendationEngineTests: XCTestCase {
     private var tracks: [Track] { DemoCatalog.tracks }

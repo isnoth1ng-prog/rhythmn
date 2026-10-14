@@ -25,15 +25,8 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Run iOS unit tests
-        run: >-
-          xcodebuild
-          -project Rhythm.xcodeproj
-          -scheme Rhythm
-          -sdk iphonesimulator
-          -destination 'platform=iOS Simulator,name=iPhone 16'
-          CODE_SIGNING_ALLOWED=NO
-          test
+      - name: Run shared core tests
+        run: swift test --package-path .
 
       - name: Build iOS Simulator app
         run: >-

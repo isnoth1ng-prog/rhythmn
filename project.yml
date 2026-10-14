@@ -26,20 +26,6 @@ targets:
         PRODUCT_NAME: Rhythm
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGNING_ALLOWED: NO
-    scheme:
-      testTargets:
-        - RhythmTests
-  RhythmTests:
-    type: bundle.unit-test
-    platform: iOS
-    sources:
-      - path: Tests/RhythmTests
-    dependencies:
-      - target: Rhythm
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.isnoth1ngprog.rhythmn.tests
-        CODE_SIGNING_ALLOWED: NO
   RhythmWidget:
     type: app-extension
     platform: iOS

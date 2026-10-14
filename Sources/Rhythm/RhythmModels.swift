@@ -1,5 +1,18 @@
 import Foundation
 
+enum RepeatMode: String {
+    case off, all, one
+
+    var icon: String {
+        switch self {
+        case .off: "repeat"
+        case .all: "repeat"
+        case .one: "repeat.1"
+        }
+    }
+}
+
+
 struct LyricLine: Identifiable, Codable, Hashable {
     let id: Int
     let start: TimeInterval
