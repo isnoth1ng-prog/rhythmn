@@ -55,24 +55,26 @@ enum AccentTone: String, CaseIterable, Identifiable {
 }
 
 enum RhythmTab: String, CaseIterable, Identifiable {
-    case library, search, wave, settings
+    case home, wave, search, library, settings
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .library: "Музыка"
+        case .home: "Главная"
+        case .wave: "Моя волна"
         case .search: "Поиск"
-        case .wave: "Волна"
+        case .library: "Коллекция"
         case .settings: "Настройки"
         }
     }
 
     var symbol: String {
         switch self {
-        case .library: "square.stack.3d.up"
-        case .search: "magnifyingglass"
+        case .home: "house"
         case .wave: "waveform.path"
+        case .search: "magnifyingglass"
+        case .library: "square.stack.3d.up"
         case .settings: "slider.horizontal.3"
         }
     }
