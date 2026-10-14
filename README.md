@@ -27,4 +27,4 @@ iOS-приложение для музыки с нативным интерфе�
 
 Sources/Rhythm — основное приложение, которое попадает в IPA.  
 Sources/RhythmWidget — Live Activity и Dynamic Island.  
-app/ и src/ — ранний Expo-прототип; workflow iOS IPA их не собирает.
+Проект содержит одну нативную iOS-реализацию на SwiftUI.
