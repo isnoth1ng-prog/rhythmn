@@ -1,663 +1,1010 @@
 import SwiftUI
-import AVFoundation
-import AVFAudio
-import ActivityKit
 
-private struct Track: Identifiable, Hashable {
-    let id: String
-    let title: String
-    let artist: String
-    let genre: String
-    let audioURL: URL
-    static let sample = Track(
-        id: "saints-pd",
-        title: "When the Saints Go Marching In",
-        artist: "Traditional",
-        genre: "Folk",
-        audioURL: URL(string: "https://upload.wikimedia.org/wikipedia/commons/transcoded/0/06/When_the_Saints_Go_Marching_In.ogg/When_the_Saints_Go_Marching_In.ogg.mp3")!
-    )
-}
+private enum RootSheet: Identifiable {
+    case player
+    case artist(String)
+    case playlist(String)
 
-private enum Tab: String, CaseIterable, Identifiable {
-    case library = "Моя музыка", search = "Поиск", wave = "Моя волна", settings = "Настройки"
-    var id: String { rawValue }
-    var icon: String {
+    var id: String {
         switch self {
-        case .library: "square.stack.fill"
-        case .search: "magnifyingglass"
-        case .wave: "waveform.path"
-        case .settings: "slider.horizontal.3"
+        case .player: "player"
+        case .artist(let id): "artist-\(id)"
+        case .playlist(let id): "playlist-\(id)"
         }
     }
 }
 
 struct ContentView: View {
-    @AppStorage("rhythm.accent") private var accentName = "Мята"
-    @AppStorage("rhythm.appearance") private var appearance = "Тёмная"
-    @AppStorage("rhythm.saved") private var saved = false
-    @State private var tab: Tab = .library
-    @State private var query = ""
-    @State private var playerOpen = false
-    @State private var artistOpen = false
-    @State private var lyricsVisible = true
-    @State private var isPlaying = false
-    @State private var player: AVPlayer?
-    @State private var wave: [Track] = [.sample]
-    @State private var waveIndex = 0
-    @State private var isShuffling = false
-    @State private var repeatsTrack = false
+    @StateObject private var model = RhythmAppModel()
+    @State private var selectedTab: RhythmTab = .library
+    @State private var activeSheet: RootSheet?
 
-    private var track: Track { wave.indices.contains(waveIndex) ? wave[waveIndex] : .sample }
-    private var dark: Bool { appearance == "Тёмная" }
-    private var ink: Color { dark ? .white : Color(red: 0.08, green: 0.09, blue: 0.1) }
-    private var muted: Color { ink.opacity(0.55) }
-    private var panel: Color { dark ? Color.white.opacity(0.075) : Color.black.opacity(0.045) }
-    private var accent: Color {
-        switch accentName {
-        case "Фиолетовый": .purple
-        case "Янтарный": .orange
-        case "Ледяной": .cyan
-        default: Color(red: 0.38, green: 0.84, blue: 0.69)
-        }
-    }
+    private var light: Bool { model.appearance == .light }
 
     var body: some View {
         ZStack {
-            background.ignoresSafeArea()
-            TabView(selection: $tab) {
-                library.tabItem { Label(Tab.library.rawValue, systemImage: Tab.library.icon) }.tag(Tab.library)
-                search.tabItem { Label(Tab.search.rawValue, systemImage: Tab.search.icon) }.tag(Tab.search)
-                waveView.tabItem { Label(Tab.wave.rawValue, systemImage: Tab.wave.icon) }.tag(Tab.wave)
-                settings.tabItem { Label(Tab.settings.rawValue, systemImage: Tab.settings.icon) }.tag(Tab.settings)
+            RhythmPalette.background(light).ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                Group {
+                    switch selectedTab {
+                    case .library:
+                        LibraryScreen(model: model, openPlayer: { activeSheet = .player }, openPlaylist: { activeSheet = .playlist($0) }, openSearch: { selectedTab = .search })
+                    case .search:
+                        SearchScreen(model: model, openPlayer: { activeSheet = .player }, openArtist: { activeSheet = .artist($0) })
+                    case .wave:
+                        WaveScreen(model: model, openPlayer: { activeSheet = .player })
+                    case .settings:
+                        SettingsScreen(model: model)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if let track = model.currentTrack {
+                    MiniPlayer(
+                        model: model,
+                        track: track,
+                        openPlayer: { activeSheet = .player }
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
+                BottomNavigation(selectedTab: $selectedTab, model: model)
             }
-            .tint(accent)
-            .toolbarBackground(dark ? Color.black : Color.white, for: .tabBar)
-            .toolbarBackground(.visible, for: .tabBar)
-            .safeAreaInset(edge: .bottom, spacing: 0) { miniPlayer }
         }
-        .foregroundStyle(ink)
-        .preferredColorScheme(dark ? .dark : .light)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .fullScreenCover(isPresented: $playerOpen) { fullPlayer }
-        .sheet(isPresented: $artistOpen) { artistSheet }
-        .task { await RhythmActivityController.endAll() }
-    }
-
-    private var background: some View {
-        ZStack {
-            dark ? Color(red: 0.025, green: 0.035, blue: 0.045) : Color(red: 0.94, green: 0.95, blue: 0.96)
-            RadialGradient(colors: [accent.opacity(dark ? 0.19 : 0.13), .clear], center: .topTrailing, startRadius: 4, endRadius: 460)
-            LinearGradient(colors: [ink.opacity(0.025), .clear, accent.opacity(0.025)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        }
-    }
-
-    private var header: some View {
-        HStack(spacing: 11) {
-            RhythmMark(color: accent, size: 32)
-            Text("RHYTHM").font(.system(size: 13, weight: .bold, design: .rounded)).tracking(3)
-            Spacer()
-            Image(systemName: "waveform").foregroundStyle(accent)
-        }
-        .padding(.horizontal, 22).padding(.top, 7).padding(.bottom, 12)
-    }
-
-    private var library: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 22) {
-                header
-                title("Моя музыка", subtitle: "Треки, к которым хочется вернуться")
-
-                HStack(spacing: 14) {
-                    Artwork(size: 78, accent: accent)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("ПРОДОЛЖАЙ СЛУШАТЬ")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .tracking(1.2)
-                            .foregroundStyle(muted)
-                        Text(Track.sample.title)
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .lineLimit(2)
-                        Text(Track.sample.artist)
-                            .font(.system(size: 12))
-                            .foregroundStyle(muted)
-                    }
-                    Spacer(minLength: 2)
-                    Button {
-                        wave = [.sample]
-                        waveIndex = 0
-                        playerOpen = true
-                        if !isPlaying { togglePlayback() }
-                    } label: {
-                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(dark ? .black : .white)
-                            .frame(width: 46, height: 46)
-                            .background(accent, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(isPlaying ? "Пауза" : "Воспроизвести")
+        .preferredColorScheme(model.appearance.preferredColorScheme)
+        .animation(.spring(response: 0.36, dampingFraction: 0.86), value: model.currentTrack?.id)
+        .sheet(item: $activeSheet) { route in
+            switch route {
+            case .player:
+                if model.currentTrack != nil {
+                    NowPlayingView(model: model)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.hidden)
+                        .presentationBackground(RhythmPalette.background(light))
                 }
-                .padding(15)
-                .background(
-                    LinearGradient(colors: [accent.opacity(0.22), panel], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 23)
+            case .artist(let id):
+                ArtistDiscographyView(model: model, artistID: id) { track in
+                    model.play(track, in: model.tracks(for: id))
+                    activeSheet = .player
+                }
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.hidden)
+                    .presentationBackground(RhythmPalette.background(light))
+            case .playlist(let id):
+                PlaylistDetailView(model: model, playlistID: id)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.hidden)
+                    .presentationBackground(RhythmPalette.background(light))
+            }
+        }
+        .task {
+            // Playback is not restored across launches, so clear any stale Dynamic Island activity.
+            await RhythmActivityController.endAll()
+        }
+    }
+}
+
+private struct ScreenIntro: View {
+    let model: RhythmAppModel
+    let eyebrow: String
+    let title: String
+    let subtitle: String
+
+    private var light: Bool { model.appearance == .light }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack(spacing: 9) {
+                BrandMark(size: 31, accent: model.accent.color)
+                Text("RHYTHM")
+                    .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                    .tracking(3.2)
+                    .foregroundStyle(RhythmPalette.text(light))
+                Spacer()
+                Eyebrow(text: eyebrow, color: model.accent.color)
+            }
+            .padding(.bottom, 8)
+
+            Text(title)
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .tracking(-1.1)
+                .foregroundStyle(RhythmPalette.text(light))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(subtitle)
+                .font(.system(size: 15, weight: .regular, design: .rounded))
+                .foregroundStyle(RhythmPalette.muted(light))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, 18)
+    }
+}
+
+private struct LibraryScreen: View {
+    @ObservedObject var model: RhythmAppModel
+    let openPlayer: () -> Void
+    let openPlaylist: (String) -> Void
+    let openSearch: () -> Void
+    @State private var showingPlaylistPrompt = false
+    @State private var playlistName = ""
+
+    private var light: Bool { model.appearance == .light }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 27) {
+                ScreenIntro(
+                    model: model,
+                    eyebrow: "ТВОЯ КОЛЛЕКЦИЯ",
+                    title: "Моя музыка",
+                    subtitle: "Треки, к которым хочется вернуться."
                 )
-                .overlay(RoundedRectangle(cornerRadius: 23).stroke(ink.opacity(0.07)))
 
-                HStack {
-                    Text("ТВОЯ КОЛЛЕКЦИЯ")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .tracking(1.5)
-                        .foregroundStyle(muted)
-                    Spacer()
-                    Text(saved ? "1 ТРЕК" : "1 ТРЕК")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(accent)
-                }
+                libraryHero
 
                 HStack(spacing: 12) {
-                    collectionCard(icon: "heart.fill", title: "Любимые", detail: saved ? "1 трек" : "Пока пусто", tint: accent)
-                    collectionCard(icon: "clock.fill", title: "Недавно", detail: "1 прослушивание", tint: .cyan)
+                    SummaryTile(title: "Сохранено", value: "\(model.savedTracks.count)", symbol: "bookmark.fill", model: model)
+                    SummaryTile(title: "Нравится", value: "\(model.likedTracks.count)", symbol: "heart.fill", model: model)
                 }
 
                 VStack(alignment: .leading, spacing: 13) {
-                    HStack {
-                        Text("Тестовый трек")
-                            .font(.system(size: 18, weight: .bold, design: .rounded))
-                        Spacer()
-                        Button { tab = .search } label: {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundStyle(accent)
-                                .frame(width: 36, height: 36)
-                                .background(panel, in: Circle())
+                    SectionHeading(title: "Плейлисты", actionTitle: "Создать", action: { showingPlaylistPrompt = true }, light: light)
+                    if model.playlists.isEmpty {
+                        Button { showingPlaylistPrompt = true } label: {
+                            HStack(spacing: 13) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(model.accent.color)
+                                    .frame(width: 48, height: 48)
+                                    .background(model.accent.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 16))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Собери свою подборку")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundStyle(RhythmPalette.text(light))
+                                    Text("Создай плейлист и добавляй туда треки")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(RhythmPalette.muted(light))
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(15)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RhythmPalette.surface(light), in: RoundedRectangle(cornerRadius: 21))
+                            .overlay(RoundedRectangle(cornerRadius: 21).stroke(RhythmPalette.border(light), lineWidth: 1))
                         }
                         .buttonStyle(.plain)
+                    } else {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(model.playlists) { playlist in
+                                    Button { openPlaylist(playlist.id) } label: {
+                                        PlaylistCard(playlist: playlist, count: model.tracks(in: playlist).count, light: light)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                Button { showingPlaylistPrompt = true } label: {
+                                    VStack(spacing: 10) {
+                                        Image(systemName: "plus")
+                                            .font(.system(size: 20, weight: .semibold))
+                                            .foregroundStyle(model.accent.color)
+                                        Text("Новый")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(RhythmPalette.muted(light))
+                                    }
+                                    .frame(width: 112, height: 126)
+                                    .background(RhythmPalette.surface(light), in: RoundedRectangle(cornerRadius: 22))
+                                    .overlay(RoundedRectangle(cornerRadius: 22).stroke(RhythmPalette.border(light), lineWidth: 1))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                     }
-                    trackRow(.sample)
                 }
 
-                HStack(spacing: 10) {
-                    Image(systemName: "sparkles").foregroundStyle(accent)
-                    Text("Новые треки и рекомендации появятся здесь, когда подключим музыкальный каталог.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(panel.opacity(0.75), in: RoundedRectangle(cornerRadius: 16))
+                trackSection(
+                    title: "Сохранённое",
+                    subtitle: "Твоя личная библиотека",
+                    tracks: model.savedTracks,
+                    emptyTitle: "Здесь пока тихо",
+                    emptyText: "Добавляй треки из поиска или демо-каталога.",
+                    emptyAction: openSearch,
+                    emptyActionTitle: "Открыть поиск",
+                    queue: model.savedTracks
+                )
+
+                trackSection(
+                    title: "Недавно слушал",
+                    subtitle: nil,
+                    tracks: model.recentlyPlayed,
+                    emptyTitle: "История появится здесь",
+                    emptyText: "Выбранные треки будут собраны в одном месте.",
+                    emptyAction: nil,
+                    emptyActionTitle: nil,
+                    queue: model.recentlyPlayed
+                )
+
+                trackSection(
+                    title: "Демо-каталог",
+                    subtitle: "Интерфейсная подборка для проверки приложения",
+                    tracks: model.tracks,
+                    emptyTitle: "Каталог пуст",
+                    emptyText: "Добавленный источник появится здесь.",
+                    emptyAction: nil,
+                    emptyActionTitle: nil,
+                    queue: model.tracks
+                )
             }
             .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 24)
+            .padding(.bottom, 22)
+        }
+        .scrollIndicators(.hidden)
+        .alert("Новый плейлист", isPresented: $showingPlaylistPrompt) {
+            TextField("Название", text: $playlistName)
+            Button("Создать") {
+                model.createPlaylist(playlistName)
+                playlistName = ""
+            }
+            Button("Отмена", role: .cancel) { playlistName = "" }
+        } message: {
+            Text("Подборка сохранится на этом устройстве.")
         }
     }
 
-        private var search: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                title("Поиск", subtitle: "Ищи треки и авторов")
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(accent)
-                    TextField("Название или автор", text: $query).autocorrectionDisabled()
+    private var libraryHero: some View {
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [model.accent.color.opacity(light ? 0.20 : 0.34), Color(red: 0.16, green: 0.25, blue: 0.28).opacity(light ? 0.16 : 0.7), RhythmPalette.surface(light)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            Circle()
+                .stroke(model.accent.color.opacity(0.25), lineWidth: 1)
+                .frame(width: 178, height: 178)
+                .offset(x: 242, y: -52)
+            Circle()
+                .stroke(model.accent.color.opacity(0.15), lineWidth: 1)
+                .frame(width: 128, height: 128)
+                .offset(x: 275, y: -21)
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 11) {
+                    Eyebrow(text: "СЛУШАЙ ПО-СВОЕМУ", color: model.accent.color)
+                    Text("Твой звук.\nТвои правила.")
+                        .font(.system(size: 25, weight: .bold, design: .rounded))
+                        .tracking(-0.5)
+                        .foregroundStyle(RhythmPalette.text(light))
+                    Button(action: openSearch) {
+                        HStack(spacing: 7) {
+                            Text("Найти музыку")
+                            Image(systemName: "arrow.up.right")
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(model.accent.color)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .padding(15).background(panel, in: RoundedRectangle(cornerRadius: 17))
-                trackRow(.sample)
-                Text("Онлайн-поиск музыкального каталога подключим отдельно.")
-                    .font(.system(size: 12)).foregroundStyle(muted)
-            }.padding(20)
+                Spacer(minLength: 0)
+                Image(systemName: "waveform.path")
+                    .font(.system(size: 42, weight: .light))
+                    .foregroundStyle(model.accent.color.opacity(0.85))
+                    .padding(.trailing, 8)
+                    .padding(.bottom, 8)
+            }
+            .padding(21)
         }
+        .frame(height: 184)
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(RhythmPalette.border(light), lineWidth: 1))
     }
 
-    private var waveView: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                title("Моя волна", subtitle: "Подборка обновляется по твоему настроению")
-                HStack(spacing: 14) {
-                    Image(systemName: "waveform.path").font(.system(size: 26)).foregroundStyle(accent)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Твоя волна").font(.system(size: 18, weight: .bold))
-                        Text("Нажми обновить, чтобы собрать новую последовательность.")
-                            .font(.system(size: 12)).foregroundStyle(muted)
+    @ViewBuilder
+    private func trackSection(
+        title: String,
+        subtitle: String?,
+        tracks: [Track],
+        emptyTitle: String,
+        emptyText: String,
+        emptyAction: (() -> Void)?,
+        emptyActionTitle: String?,
+        queue: [Track]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeading(title: title, light: light)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(RhythmPalette.muted(light))
+                    .padding(.top, -7)
+            }
+            if tracks.isEmpty {
+                EmptyPanel(title: emptyTitle, message: emptyText, actionTitle: emptyActionTitle, action: emptyAction, model: model)
+            } else {
+                VStack(spacing: 5) {
+                    ForEach(tracks) { track in
+                        TrackRow(model: model, track: track, onPlay: {
+                            model.play(track, in: queue)
+                            openPlayer()
+                        })
                     }
                 }
-                .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                .background(LinearGradient(colors: [accent.opacity(0.22), panel], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 23))
-                Button(action: refreshWave) {
-                    Label("Обновить волну", systemImage: "arrow.clockwise")
-                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(ink)
-                        .padding(.horizontal, 17).padding(.vertical, 13).background(accent, in: Capsule())
-                }
-                trackRow(track)
-                Text("Для автоматической выдачи новых реальных песен нужен онлайн-каталог. Пока подключён открытый тестовый аудиотрек; случайные вымышленные песни не выдаются за рекомендации.")
-                    .font(.system(size: 11)).foregroundStyle(muted)
-            }.padding(20)
+            }
+        }
+    }
+}
+
+private struct SearchScreen: View {
+    @ObservedObject var model: RhythmAppModel
+    let openPlayer: () -> Void
+    let openArtist: (String) -> Void
+    @State private var query = ""
+    @State private var filter: SearchFilter = .all
+
+    private var light: Bool { model.appearance == .light }
+    private var filteredTracks: [Track] {
+        let results = model.searchTracks(query)
+        switch filter {
+        case .all, .tracks: results
+        case .artists: query.isEmpty ? [] : results.filter { track in model.searchArtists(query).contains(where: { $0.id == track.artistID }) }
         }
     }
 
-    private var settings: some View {
+    var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 21) {
-                title("Настройки", subtitle: "Оформи Rhythm под себя")
-                section("Тема")
-                HStack(spacing: 10) {
-                    choice("Тёмная", selected: dark) { appearance = "Тёмная" }
-                    choice("Светлая", selected: !dark) { appearance = "Светлая" }
-                }
-                section("Акцент")
-                HStack(spacing: 10) {
-                    accentChoice("Мята", color: Color(red: 0.38, green: 0.84, blue: 0.69))
-                    accentChoice("Фиолетовый", color: .purple)
-                    accentChoice("Янтарный", color: .orange)
-                    accentChoice("Ледяной", color: .cyan)
-                }
-                section("Приложение")
-                Text("Rhythm · музыкальный плеер в разработке")
-                    .font(.system(size: 13)).foregroundStyle(muted)
-            }.padding(20)
-        }
-    }
+            VStack(alignment: .leading, spacing: 24) {
+                ScreenIntro(model: model, eyebrow: "ПОИСК", title: "Найди свой ритм", subtitle: "Ищи по треку, исполнителю или альбому.")
 
-    private var miniPlayer: some View {
-        HStack(spacing: 11) {
-            Button { playerOpen = true } label: {
                 HStack(spacing: 11) {
-                    Artwork(size: 38, accent: accent)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(track.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                        Text(track.artist).font(.system(size: 10)).foregroundStyle(muted).lineLimit(1)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            Button(action: togglePlayback) {
-                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 16, weight: .bold)).foregroundStyle(accent)
-                    .frame(width: 42, height: 42)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(isPlaying ? "Пауза" : "Воспроизвести")
-        }
-        .padding(.horizontal, 12).padding(.vertical, 6)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15))
-        .overlay(RoundedRectangle(cornerRadius: 15).stroke(ink.opacity(0.08)))
-        .padding(.horizontal, 14).padding(.top, 6).padding(.bottom, 4)
-        .background(dark ? Color.black : Color.white)
-    }
-
-    private var tabBar: some View {
-        HStack(spacing: 0) {
-            ForEach(Tab.allCases) { item in
-                Button { withAnimation(.snappy(duration: 0.22)) { tab = item } } label: {
-                    VStack(spacing: 5) {
-                        Image(systemName: item.icon).font(.system(size: 17, weight: .semibold))
-                        Text(item.rawValue).font(.system(size: 9, weight: .medium)).lineLimit(1)
-                    }
-                    .foregroundStyle(tab == item ? accent : muted)
-                    .frame(maxWidth: .infinity).padding(.vertical, 10)
-                }.buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 8)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) { Rectangle().fill(ink.opacity(0.08)).frame(height: 0.5) }
-    }
-
-    private var fullPlayer: some View {
-        GeometryReader { geometry in
-            let artworkSize = min(252, min(geometry.size.width - 76, geometry.size.height * 0.31))
-            ZStack {
-                background.ignoresSafeArea()
-                VStack(spacing: 0) {
-                    HStack {
-                        Button { playerOpen = false } label: {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(ink)
-                                .frame(width: 44, height: 44)
-                                .background(panel, in: Circle())
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(model.accent.color)
+                    TextField("Что включить?", text: $query)
+                        .font(.system(size: 16))
+                        .foregroundStyle(RhythmPalette.text(light))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.search)
+                    if !query.isEmpty {
+                        Button { query = "" } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(RhythmPalette.muted(light))
                         }
                         .buttonStyle(.plain)
-                        Spacer()
-                        Text("СЕЙЧАС ИГРАЕТ")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .tracking(1.6)
-                            .foregroundStyle(muted)
-                        Spacer()
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(ink)
-                            .frame(width: 44, height: 44)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 6)
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 54)
+                .background(RhythmPalette.surface(light), in: Capsule())
+                .overlay(Capsule().stroke(RhythmPalette.border(light), lineWidth: 1))
 
-                    ScrollView(showsIndicators: false) {
-                        VStack(spacing: 16) {
-                            Artwork(size: artworkSize, accent: accent)
-                                .shadow(color: accent.opacity(0.2), radius: 26, y: 12)
-                                .padding(.top, 10)
+                HStack(spacing: 8) {
+                    ForEach(SearchFilter.allCases) { option in
+                        Button { filter = option } label: {
+                            Text(option.title)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(filter == option ? RhythmPalette.background(light) : RhythmPalette.muted(light))
+                                .padding(.horizontal, 15)
+                                .padding(.vertical, 9)
+                                .background(filter == option ? model.accent.color : RhythmPalette.surface(light), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
 
-                            VStack(spacing: 5) {
-                                Text(track.title)
-                                    .font(.system(size: 21, weight: .bold, design: .rounded))
-                                    .multilineTextAlignment(.center)
-                                    .lineLimit(2)
-                                Button { artistOpen = true } label: {
-                                    Text(track.artist)
-                                        .font(.system(size: 13, weight: .medium))
-                                        .foregroundStyle(accent)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding(.horizontal, 8)
-
-                            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-                                let rawTime = player?.currentTime().seconds ?? 0
-                                let rawDuration = player?.currentItem?.duration.seconds ?? 0
-                                let elapsed = rawTime.isFinite ? max(0, rawTime) : 0
-                                let total = rawDuration.isFinite && rawDuration > 0 ? rawDuration : 1
-                                VStack(spacing: 4) {
-                                    Slider(
-                                        value: Binding(
-                                            get: { min(elapsed, total) },
-                                            set: { player?.seek(to: CMTime(seconds: $0, preferredTimescale: 600)) }
-                                        ),
-                                        in: 0...total
-                                    )
-                                    .tint(accent)
+                if query.isEmpty {
+                    VStack(alignment: .leading, spacing: 13) {
+                        SectionHeading(title: "Под настроение", light: light)
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                            ForEach(["Ночь", "Спокойствие", "Энергия", "Фокус"], id: \.self) { tag in
+                                Button {
+                                    query = tag
+                                    filter = .tracks
+                                } label: {
                                     HStack {
-                                        Text(timeLabel(elapsed))
+                                        Text(tag)
+                                            .font(.system(size: 14, weight: .semibold))
                                         Spacer()
-                                        Text(timeLabel(total))
+                                        Image(systemName: "arrow.up.right")
+                                            .font(.system(size: 11, weight: .semibold))
                                     }
-                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(muted)
-                                }
-                            }
-
-                            HStack(spacing: 0) {
-                                playerModeButton("shuffle", selected: isShuffling) { isShuffling.toggle() }
-                                Spacer()
-                                playerControl("backward.end.fill", size: 19) { }
-                                Spacer()
-                                Button(action: togglePlayback) {
-                                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                        .font(.system(size: 22, weight: .bold))
-                                        .foregroundStyle(dark ? .black : .white)
-                                        .frame(width: 62, height: 62)
-                                        .background(accent, in: Circle())
-                                        .shadow(color: accent.opacity(0.28), radius: 14, y: 6)
+                                    .foregroundStyle(RhythmPalette.text(light))
+                                    .padding(15)
+                                    .background(RhythmPalette.surface(light), in: RoundedRectangle(cornerRadius: 18))
+                                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(RhythmPalette.border(light), lineWidth: 1))
                                 }
                                 .buttonStyle(.plain)
-                                Spacer()
-                                playerControl("forward.end.fill", size: 19) { }
-                                Spacer()
-                                playerModeButton("repeat", selected: repeatsTrack) { repeatsTrack.toggle() }
-                            }
-                            .padding(.horizontal, 2)
-
-                            HStack {
-                                Button { saved.toggle() } label: {
-                                    Label(saved ? "Сохранено" : "В медиатеку", systemImage: saved ? "checkmark" : "plus")
-                                }
-                                Spacer()
-                                Button { withAnimation(.spring(duration: 0.35)) { lyricsVisible.toggle() } } label: {
-                                    Label(lyricsVisible ? "Скрыть текст" : "Текст", systemImage: "quote.bubble")
-                                }
-                            }
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(accent)
-                            .buttonStyle(.plain)
-                            .padding(.top, 2)
-
-                            if lyricsVisible {
-                                TimelineView(.animation(minimumInterval: 0.35, paused: !isPlaying)) { timeline in
-                                    let active = Int(timeline.date.timeIntervalSinceReferenceDate / 2.4) % 4
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        HStack {
-                                            Text("ТЕКСТ ПЕСНИ")
-                                                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                                .tracking(1.5)
-                                                .foregroundStyle(muted)
-                                            Spacer()
-                                            Image(systemName: "waveform")
-                                                .font(.system(size: 13, weight: .semibold))
-                                                .foregroundStyle(accent.opacity(0.75))
-                                        }
-                                        lyricLine("Oh, when the saints go marching in,", index: 0, active: active)
-                                        lyricLine("Oh, when the saints go marching in,", index: 1, active: active)
-                                        lyricLine("Lord, I want to be in that number,", index: 2, active: active)
-                                        lyricLine("When the saints go marching in.", index: 3, active: active)
-                                    }
-                                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(16)
-                                    .background(panel, in: RoundedRectangle(cornerRadius: 20))
-                                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(ink.opacity(0.06)))
-                                }
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
                             }
                         }
-                        .padding(.horizontal, 22)
-                        .padding(.top, 4)
-                        .padding(.bottom, 24)
+                    }
+                } else {
+                    let artists = model.searchArtists(query)
+                    if filter != .tracks && !artists.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            SectionHeading(title: "Исполнители", light: light)
+                            ForEach(artists) { artist in
+                                Button { openArtist(artist.id) } label: {
+                                    HStack(spacing: 12) {
+                                        TrackArtwork(track: model.tracks.first(where: { $0.artistID == artist.id }) ?? model.tracks[0], size: 48, showsTitle: false)
+                                            .clipShape(Circle())
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(artist.name)
+                                                .font(.system(size: 15, weight: .semibold))
+                                                .foregroundStyle(RhythmPalette.text(light))
+                                            Text(artist.note)
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(RhythmPalette.muted(light))
+                                                .lineLimit(1)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundStyle(RhythmPalette.muted(light))
+                                    }
+                                    .padding(12)
+                                    .background(RhythmPalette.surface(light), in: RoundedRectangle(cornerRadius: 19))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        SectionHeading(title: "Треки", light: light)
+                        if filteredTracks.isEmpty {
+                            EmptyPanel(title: "Ничего не найдено", message: "Попробуй другое название или исполнителя.", actionTitle: nil, action: nil, model: model)
+                        } else {
+                            ForEach(filteredTracks) { track in
+                                TrackRow(model: model, track: track, onPlay: {
+                                    model.play(track, in: filteredTracks)
+                                    openPlayer()
+                                })
+                            }
+                        }
+                    }
+                }
+
+                if query.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        SectionHeading(title: "Сейчас в каталоге", light: light)
+                        ForEach(model.tracks.prefix(4)) { track in
+                            TrackRow(model: model, track: track, onPlay: {
+                                model.play(track, in: model.tracks)
+                                openPlayer()
+                            })
+                        }
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 24)
         }
-        .preferredColorScheme(dark ? .dark : .light)
+        .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.interactively)
+    }
+}
+
+private enum SearchFilter: String, CaseIterable, Identifiable {
+    case all, tracks, artists
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .all: "Всё"
+        case .tracks: "Треки"
+        case .artists: "Артисты"
+        }
+    }
+}
+
+private struct WaveScreen: View {
+    @ObservedObject var model: RhythmAppModel
+    let openPlayer: () -> Void
+    private let moods = ["Случайно", "Ночь", "Спокойствие", "Энергия", "Фокус"]
+    private var light: Bool { model.appearance == .light }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 23) {
+                ScreenIntro(model: model, eyebrow: "ПОД ТВОЁ НАСТРОЕНИЕ", title: "Моя волна", subtitle: "Подборка меняется от твоих отметок и прослушиваний.")
+
+                waveHero
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(moods, id: \.self) { mood in
+                            Button {
+                                model.waveMood = mood
+                                model.refreshWave()
+                            } label: {
+                                Text(mood)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(model.waveMood == mood ? RhythmPalette.background(light) : RhythmPalette.muted(light))
+                                    .padding(.horizontal, 15)
+                                    .padding(.vertical, 9)
+                                    .background(model.waveMood == mood ? model.accent.color : RhythmPalette.surface(light), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        SectionHeading(title: "Следом для тебя", light: light)
+                        Text("Порядок собирается заново с учётом лайков и истории.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(RhythmPalette.muted(light))
+                    }
+                    Spacer(minLength: 4)
+                    Button { model.refreshWave() } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(model.accent.color)
+                            .frame(width: 40, height: 40)
+                            .background(model.accent.color.opacity(0.12), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Собрать новую волну")
+                }
+
+                VStack(spacing: 5) {
+                    ForEach(Array(model.waveQueue.enumerated()), id: \.element.id) { index, track in
+                        TrackRow(model: model, track: track, onPlay: {
+                            model.playFromWave(track)
+                            openPlayer()
+                        }, position: index + 1)
+                    }
+                }
+
+                Text("Пока используется локальный демо-каталог. Рекомендации станут шире после подключения твоего источника музыки.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(RhythmPalette.muted(light))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+        .onAppear {
+            if model.waveQueue.isEmpty { model.refreshWave() }
+        }
     }
 
-        private func collectionCard(icon: String, title: String, detail: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 34, height: 34)
-                .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 11))
-            Text(title).font(.system(size: 13, weight: .semibold))
-            Text(detail).font(.system(size: 10)).foregroundStyle(muted)
+    private var waveHero: some View {
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(LinearGradient(colors: [model.accent.color.opacity(light ? 0.28 : 0.34), Color(red: 0.18, green: 0.22, blue: 0.33), RhythmPalette.surface(light)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Eyebrow(text: "RHYTHM RADIO", color: model.accent.color)
+                    Text("Продолжай\nсвою волну")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .tracking(-0.6)
+                        .foregroundStyle(.white)
+                    Text("\(model.waveQueue.count) треков · \(model.waveMood.lowercased())")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white.opacity(0.68))
+                    Button {
+                        model.refreshWave()
+                        if let first = model.waveQueue.first {
+                            model.playFromWave(first)
+                            openPlayer()
+                        }
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("Слушать волну")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundStyle(Color(red: 0.04, green: 0.06, blue: 0.07))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(model.accent.color, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer(minLength: 0)
+                WaveformGlyph(accent: model.accent.color)
+                    .frame(width: 72, height: 84)
+            }
+            .padding(21)
+        }
+        .frame(height: 220)
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(.white.opacity(0.12), lineWidth: 1))
+    }
+}
+
+private struct WaveformGlyph: View {
+    let accent: Color
+    private let heights: [CGFloat] = [16, 30, 50, 36, 66, 43, 26, 58, 34, 20]
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 4) {
+            ForEach(Array(heights.enumerated()), id: \.offset) { index, height in
+                Capsule()
+                    .fill(accent.opacity(index.isMultiple(of: 3) ? 1 : 0.62))
+                    .frame(width: 4, height: height)
+            }
+        }
+        .shadow(color: accent.opacity(0.24), radius: 14)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct SettingsScreen: View {
+    @ObservedObject var model: RhythmAppModel
+    private var light: Bool { model.appearance == .light }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 27) {
+                ScreenIntro(model: model, eyebrow: "ПОД ТЕБЯ", title: "Настройки", subtitle: "Собери интерфейс, который ощущается твоим.")
+
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionHeading(title: "Оформление", light: light)
+                    HStack(spacing: 9) {
+                        ForEach(AppAppearance.allCases) { option in
+                            Button { model.appearance = option } label: {
+                                VStack(spacing: 9) {
+                                    Image(systemName: appearanceSymbol(option))
+                                        .font(.system(size: 18, weight: .medium))
+                                        .foregroundStyle(model.appearance == option ? model.accent.color : RhythmPalette.muted(light))
+                                    Text(option.title)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(RhythmPalette.text(light))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.8)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 78)
+                                .background(model.appearance == option ? model.accent.color.opacity(0.12) : RhythmPalette.surface(light), in: RoundedRectangle(cornerRadius: 18))
+                                .overlay(RoundedRectangle(cornerRadius: 18).stroke(model.appearance == option ? model.accent.color.opacity(0.48) : RhythmPalette.border(light), lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionHeading(title: "Акцент", light: light)
+                    SurfaceCard(light: light) {
+                        HStack(spacing: 0) {
+                            ForEach(AccentTone.allCases) { tone in
+                                Button { model.accent = tone } label: {
+                                    VStack(spacing: 8) {
+                                        Circle()
+                                            .fill(tone.color.gradient)
+                                            .frame(width: 34, height: 34)
+                                            .overlay {
+                                                if model.accent == tone {
+                                                    Image(systemName: "checkmark")
+                                                        .font(.system(size: 12, weight: .bold))
+                                                        .foregroundStyle(Color.black.opacity(0.75))
+                                                }
+                                            }
+                                            .overlay(Circle().stroke(.white.opacity(0.24), lineWidth: 1))
+                                        Text(tone.title)
+                                            .font(.system(size: 10, weight: .medium))
+                                            .foregroundStyle(RhythmPalette.muted(light))
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 15)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeading(title: "Музыкальный источник", light: light)
+                    SurfaceCard(light: light) {
+                        HStack(spacing: 13) {
+                            Image(systemName: "antenna.radiowaves.left.and.right")
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(model.accent.color)
+                                .frame(width: 43, height: 43)
+                                .background(model.accent.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 15))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Пока не подключён")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(RhythmPalette.text(light))
+                                Text("Поиск и рекомендации сейчас работают на демо-каталоге.")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(RhythmPalette.muted(light))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 0)
+                            Circle()
+                                .fill(Color.orange.opacity(0.9))
+                                .frame(width: 7, height: 7)
+                        }
+                        .padding(15)
+                    }
+                }
+
+                SurfaceCard(light: light) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "iphone")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(model.accent.color)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Твоя коллекция хранится на устройстве")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(RhythmPalette.text(light))
+                            Text("Лайки, библиотека и плейлисты останутся после перезапуска.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(RhythmPalette.muted(light))
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(16)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private func appearanceSymbol(_ appearance: AppAppearance) -> String {
+        switch appearance {
+        case .system: "circle.lefthalf.filled"
+        case .dark: "moon.stars.fill"
+        case .light: "sun.max.fill"
+        }
+    }
+}
+
+private struct SummaryTile: View {
+    let title: String
+    let value: String
+    let symbol: String
+    @ObservedObject var model: RhythmAppModel
+    private var light: Bool { model.appearance == .light }
+
+    var body: some View {
+        SurfaceCard(light: light) {
+            HStack(spacing: 12) {
+                Image(systemName: symbol)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(model.accent.color)
+                    .frame(width: 40, height: 40)
+                    .background(model.accent.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(value)
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(RhythmPalette.text(light))
+                    Text(title)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(RhythmPalette.muted(light))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(13)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct PlaylistCard: View {
+    let playlist: RhythmPlaylist
+    let count: Int
+    let light: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(LinearGradient(colors: playlist.tone.colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                Image(systemName: "waveform")
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.88))
+            }
+            .frame(width: 94, height: 82)
+            Text(playlist.name)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(RhythmPalette.text(light))
+                .lineLimit(1)
+            Text("\(count) треков")
+                .font(.system(size: 10))
+                .foregroundStyle(RhythmPalette.muted(light))
+                .padding(.top, -8)
+        }
+        .frame(width: 112, height: 126, alignment: .topLeading)
+        .padding(9)
+        .background(RhythmPalette.surface(light), in: RoundedRectangle(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(RhythmPalette.border(light), lineWidth: 1))
+    }
+}
+
+private struct EmptyPanel: View {
+    let title: String
+    let message: String
+    let actionTitle: String?
+    let action: (() -> Void)?
+    @ObservedObject var model: RhythmAppModel
+    private var light: Bool { model.appearance == .light }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: "waveform")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(model.accent.color)
+                .padding(.bottom, 2)
+            Text(title)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(RhythmPalette.text(light))
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundStyle(RhythmPalette.muted(light))
+                .fixedSize(horizontal: false, vertical: true)
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(model.accent.color)
+                    .padding(.top, 3)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(panel, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(ink.opacity(0.06)))
+        .padding(18)
+        .background(RhythmPalette.surface(light), in: RoundedRectangle(cornerRadius: 21))
+        .overlay(RoundedRectangle(cornerRadius: 21).stroke(RhythmPalette.border(light), lineWidth: 1))
     }
+}
 
-    private func trackRow(_ item: Track) -> some View {
-        HStack(spacing: 13) {
-            Artwork(size: 54, accent: accent)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(item.title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
-                Text(item.artist).font(.system(size: 11)).foregroundStyle(muted).lineLimit(1)
+private struct TrackRow: View {
+    @ObservedObject var model: RhythmAppModel
+    let track: Track
+    let onPlay: () -> Void
+    var position: Int? = nil
+    var removeFromPlaylist: (() -> Void)? = nil
+    private var light: Bool { model.appearance == .light }
+
+    var body: some View {
+        HStack(spacing: 11) {
+            if let position {
+                Text(String(format: "%02d", position))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(RhythmPalette.muted(light))
+                    .frame(width: 23)
             }
-            Spacer()
-            Button { playerOpen = true } label: {
-                Image(systemName: "play.fill").foregroundStyle(accent).frame(width: 38, height: 38)
-            }.buttonStyle(.plain)
-        }
-        .padding(10).background(panel, in: RoundedRectangle(cornerRadius: 17))
-    }
 
-
-    private func lyricLine(_ text: String, index: Int, active: Int) -> some View {
-        Text(text)
-            .foregroundStyle(index == active ? accent : ink.opacity(index < active ? 0.42 : 0.76))
-            .scaleEffect(index == active ? 1.02 : 1, anchor: .leading)
-            .animation(.easeInOut(duration: 0.4), value: active)
-    }
-
-    private var artistSheet: some View {
-        NavigationStack {
-            List {
-                Section {
-                    HStack(spacing: 14) {
-                        Artwork(size: 64, accent: accent)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(track.artist).font(.title3.weight(.semibold))
-                            Text("Исполнитель").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }.padding(.vertical, 8)
+            Button(action: onPlay) {
+                HStack(spacing: 11) {
+                    TrackArtwork(track: track, size: 54, showsTitle: false)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(track.title)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(RhythmPalette.text(light))
+                            .lineLimit(1)
+                        Text(track.artist)
+                            .font(.system(size: 12))
+                            .foregroundStyle(RhythmPalette.muted(light))
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 2)
                 }
-                Section("Дискография") {
-                    Button {
-                        artistOpen = false
-                        playerOpen = true
-                    } label: {
-                        HStack(spacing: 12) {
-                            Artwork(size: 48, accent: accent)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(track.title).foregroundStyle(.primary)
-                                Text("Традиционная песня").font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "play.fill").foregroundStyle(accent)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Menu {
+                Button(model.savedIDs.contains(track.id) ? "Убрать из библиотеки" : "Добавить в библиотеку", systemImage: model.savedIDs.contains(track.id) ? "bookmark.slash" : "bookmark") {
+                    model.toggleSaved(track)
+                }
+                Button(model.likedIDs.contains(track.id) ? "Убрать из любимого" : "Мне нравится", systemImage: model.likedIDs.contains(track.id) ? "heart.slash" : "heart") {
+                    model.toggleLiked(track)
+                }
+                if !model.playlists.isEmpty {
+                    Menu("Добавить в плейлист", systemImage: "text.badge.plus") {
+                        ForEach(model.playlists) { playlist in
+                            Button(playlist.name) { model.add(track, to: playlist.id) }
                         }
                     }
                 }
+                if let removeFromPlaylist {
+                    Button("Убрать из этого плейлиста", systemImage: "minus.circle", role: .destructive, action: removeFromPlaylist)
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(RhythmPalette.muted(light))
+                    .frame(width: 40, height: 44)
+                    .contentShape(Rectangle())
             }
-            .navigationTitle(track.artist)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button("Готово") { artistOpen = false } }
-            }
+
         }
-        .presentationDetents([.medium, .large])
-    }
-
-    private func startLiveActivity() {
-        Task { await RhythmActivityController.start(trackTitle: track.title, artist: track.artist) }
-    }
-
-    private func endLiveActivity() {
-        Task { await RhythmActivityController.endAll() }
-    }
-
-    private func timeLabel(_ seconds: Double) -> String {
-        let value = seconds.isFinite ? max(0, Int(seconds)) : 0
-        return String(format: "%d:%02d", value / 60, value % 60)
-    }
-
-    private func playerControl(_ icon: String, size: CGFloat, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: size, weight: .semibold))
-                .foregroundStyle(ink)
-                .frame(width: 38, height: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func playerModeButton(_ icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(selected ? accent : muted)
-                .frame(width: 30, height: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func togglePlayback() {
-        if player == nil { player = AVPlayer(url: track.audioURL) }
-        if isPlaying {
-            player?.pause()
-            isPlaying = false
-            endLiveActivity()
-        } else {
-            do {
-                try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-                try AVAudioSession.sharedInstance().setActive(true)
-            } catch { print("Audio session setup failed: \\(error)") }
-            player?.play()
-            isPlaying = true
-            startLiveActivity()
-        }
-    }
-
-    private func refreshWave() {
-        withAnimation(.spring(duration: 0.4)) {
-            wave = [.sample].shuffled()
-            waveIndex = 0
-        }
-    }
-
-    private func title(_ text: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(text).font(.system(size: 30, weight: .bold, design: .rounded)).tracking(-0.7)
-            Text(subtitle).font(.system(size: 13)).foregroundStyle(muted)
-        }.frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func section(_ text: String) -> some View {
-        Text(text.uppercased()).font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(1.4).foregroundStyle(muted)
-    }
-
-    private func choice(_ text: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(text).font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(selected ? (dark ? .black : .white) : ink)
-                .frame(maxWidth: .infinity).padding(14)
-                .background(selected ? accent : panel, in: RoundedRectangle(cornerRadius: 15))
-        }.buttonStyle(.plain)
-    }
-
-    private func accentChoice(_ text: String, color: Color) -> some View {
-        Button { withAnimation(.easeInOut(duration: 0.2)) { accentName = text } } label: {
-            VStack(spacing: 7) {
-                Circle().fill(color).frame(width: 27, height: 27)
-                    .overlay(Circle().stroke(ink.opacity(accentName == text ? 0.7 : 0), lineWidth: 2).padding(-4))
-                Text(text).font(.system(size: 9, weight: .medium)).foregroundStyle(ink)
-            }.frame(maxWidth: .infinity).padding(10).background(panel, in: RoundedRectangle(cornerRadius: 15))
-        }.buttonStyle(.plain)
+        .padding(.vertical, 5)
     }
 }
 
-private struct RhythmMark: View {
-    let color: Color
-    let size: CGFloat
+private struct MiniPlayer: View {
+    @ObservedObject var model: RhythmAppModel
+    let track: Track
+    let openPlayer: () -> Void
+    private var light: Bool { model.appearance == .light }
+
     var body: some View {
-        HStack(spacing: size * 0.09) {
-            Capsule().frame(width: size * 0.09, height: size * 0.29)
-            Capsule().frame(width: size * 0.09, height: size * 0.53)
-            Capsule().frame(width: size * 0.09, height: size * 0.75)
-            Capsule().frame(width: size * 0.09, height: size * 0.43)
-            Capsule().frame(width: size * 0.09, height: size * 0.22)
+        HStack(spacing: 11) {
+            Button(action: openPlayer) {
+                HStack(spacing: 11) {
+                    TrackArtwork(track: track, size: 48, showsTitle: false)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(track.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(RhythmPalette.text(light))
+                            .lineLimit(1)
+                        Text(track.artist)
+                            .font(.system(size: 11))
+                            .foregroundStyle(RhythmPalette.muted(light))
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button(action: model.togglePlayback) {
+                Image(systemName: model.isLoading ? "ellipsis" : (model.isPlaying ? "pause.fill" : "play.fill"))
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(model.accent.color)
+                    .frame(width: 42, height: 48)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(model.isPlaying ? "Пауза" : "Воспроизвести")
         }
-        .foregroundStyle(color).frame(width: size, height: size)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: size * 0.28))
-        .overlay(RoundedRectangle(cornerRadius: size * 0.28).stroke(color.opacity(0.24)))
-        .shadow(color: color.opacity(0.16), radius: 12)
+        .padding(9)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(RhythmPalette.surface(light), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(RhythmPalette.border(light), lineWidth: 1))
+        .shadow(color: .black.opacity(light ? 0.06 : 0.24), radius: 18, y: 7)
     }
 }
 
-private struct Artwork: View {
-    let size: CGFloat
-    let accent: Color
+private struct BottomNavigation: View {
+    @Binding var selectedTab: RhythmTab
+    @ObservedObject var model: RhythmAppModel
+    private var light: Bool { model.appearance == .light }
+
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.16)
-                .fill(LinearGradient(colors: [accent.opacity(0.95), .indigo.opacity(0.8), .black], startPoint: .topLeading, endPoint: .bottomTrailing))
-            Circle().stroke(.white.opacity(0.27), lineWidth: 1).frame(width: size * 0.74)
-            Circle().stroke(.white.opacity(0.18), lineWidth: 1).frame(width: size * 0.52)
-            Image(systemName: "waveform").font(.system(size: size * 0.23, weight: .light)).foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.3), radius: 9)
-            VStack {
-                Spacer()
-                HStack {
-                    Text("R").font(.system(size: size * 0.075, weight: .bold, design: .rounded)).tracking(2)
-                    Spacer()
-                    Image(systemName: "circle.hexagongrid.fill")
-                }.font(.system(size: size * 0.07)).foregroundStyle(.white.opacity(0.65)).padding(size * 0.08)
+        HStack(spacing: 0) {
+            ForEach(RhythmTab.allCases) { tab in
+                Button { selectedTab = tab } label: {
+                    VStack(spacing: 5) {
+                        Image(systemName: tab.symbol)
+                            .font(.system(size: 18, weight: selectedTab == tab ? .semibold : .regular))
+                            .frame(height: 22)
+                        Text(tab.title)
+                            .font(.system(size: 10, weight: selectedTab == tab ? .semibold : .medium))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .foregroundStyle(selectedTab == tab ? model.accent.color : RhythmPalette.muted(light))
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
-        .frame(width: size, height: size).clipShape(RoundedRectangle(cornerRadius: size * 0.16))
-        .overlay(RoundedRectangle(cornerRadius: size * 0.16).stroke(.white.opacity(0.14)))
+        .padding(.horizontal, 12)
+        .padding(.top, 11)
+        .padding(.bottom, 7)
+        .background(.ultraThinMaterial)
+        .background(RhythmPalette.background(light).opacity(0.92))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(RhythmPalette.border(light))
+                .frame(height: 0.5)
+        }
     }
 }

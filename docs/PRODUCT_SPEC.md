@@ -1,53 +1,25 @@
-# Rhythm — product specification
+# Rhythm — продукт и текущее состояние
 
-## Product direction
-Rhythm is a polished iOS and Android music app with an iOS-first visual sensibility: editorial typography, artwork-led layouts, deep matte surfaces, restrained glass, careful motion, custom iconography and deliberate spacing. Avoid default Android/Material visual styling.
+## Продукт
 
-## Must-have UX
-1. **Edge-to-edge:** app surfaces extend behind system bars where supported. Respect insets for interactive controls but avoid blank top/bottom bands. System bars match the active theme.
-2. **Persistent mini-player:** visible above bottom navigation across tabs. Tapping opens a Now Playing modal/sheet, never a separate player tab.
-3. **Lyrics inside Now Playing:** full-bleed blurred artwork background, readable gradient overlay, vertical lyric flow. Only the current timestamped line is emphasized; other lines are visually softened. Lyrics do not open a separate window. Never invent timestamps.
-4. **Themes:** System/Dark/Light across every screen, sheet, control, mini-player and system bar. Accent color is independent and updates selected controls, progress and active lyric line.
-5. **My Wave:** dynamic queue that asks a recommendation provider for new tracks as playback advances, informed by likes, skips, listening history and seeds. Deduplicate and avoid recent repeats. A demo adapter must be clearly labelled and must not pretend a fixed fixture list is personalization.
-6. **Search quality:** normalize case, punctuation, whitespace and artist/title variants; rank exact artist/title matches first. De-prioritize likely karaoke, sped-up, slowed, nightcore, reaction and unrelated uploads when looking for originals. Never claim “official” without provider evidence.
-7. **Design quality:** consistent icon stroke weights, refined buttons and touch targets, polished transitions, loading/empty/error states.
-8. **Settings:** appearance and accent selection must persist. Other settings should be marked unavailable until implemented.
-9. **Library:** likes, playlists, history and recently played should persist locally.
-10. **Accessibility:** accessible labels, contrast, scalable text and reduced-motion consideration.
+Rhythm — нативное iOS-приложение для личной музыкальной библиотеки. Интерфейс строится вокруг обложек, выразительной типографики и спокойных матовых поверхностей с тонкими стеклянными слоями. Визуальные ориентиры — Apple Music, Liquid Glass, Tesla и Nothing; избегать стандартного Material-вида.
 
-## Music-source rules
-- Use official APIs/SDKs and licensed/public-domain/demo audio.
-- YouTube Data API search provides metadata but does not permit extracting an audio-only stream. YouTube playback must use an approved player/flow and comply with developer policies.
-- SoundCloud playback depends on API access, track eligibility, attribution and current platform terms.
-- Separate metadata availability from playable audio. Do not claim a preview is full playback.
-- Lyrics should come from a legitimate source or public-domain material. Do not bundle copyrighted lyrics without permission.
+## Основные сценарии
 
-## Current prototype status
-The app shell, tabs, theme/accent state, mini-player UI, Now Playing sheet, demo search and sample lyric styling are being implemented. Playback, live catalog, recommendation service, persisted library and licensed synced lyrics are not yet complete. UI demo controls must not claim to be real streaming.
+1. **Моя музыка:** сохранённые треки, любимое, история и пользовательские плейлисты.
+2. **Поиск:** поиск названия, исполнителя, альбома и настроения; переход на страницу исполнителя с дискографией.
+3. **Плеер:** мини-плеер над навигацией и большой плеер поверх текущего экрана. Очередь, перемотка, предыдущий/следующий, shuffle, repeat, сохранение и лайк.
+4. **Текст:** находится внутри экрана плеера. Текущая строка выделяется и прокручивается по временным меткам из источника.
+5. **Моя волна:** перестраиваемая подборка. До подключения источника ранжирует локальный демонстрационный каталог по настроению, лайкам и истории; не выдаёт список за потоковый сервис.
+6. **Темы:** системная, светлая и тёмная; акцент выбирается независимо и сохраняется.
+7. **Фоновое воспроизведение:** AVPlayer, системная аудиосессия и Live Activity используют реальный поток только после его подключения.
 
-## Milestones
-A. Buildable Expo shell and refined UI.
-B. Theme/accent persistence and edge-to-edge layout.
-C. Mini-player and Now Playing sheet with blurred lyric treatment.
-D. Dynamic recommendation provider contract for My Wave.
-E. Search adapters and result ranking.
-F. Real playback from permitted sources with honest playback state.
-G. Local library/history/likes, tests and EAS builds.
+## Текущая граница
 
-## Acceptance criteria
-- No blank top/bottom bands caused by layout.
-- Mini-player persists across tabs and player is a modal.
-- Lyrics appear inside the player and only the current timestamped line is emphasized.
-- Dark/Light changes the entire app and system bars; accent updates all interactive highlights.
-- My Wave requests recommendations dynamically once provider integration is implemented.
-- Demo content is clearly labelled.
-- Errors and blocked tracks are handled honestly.
+Приложение и локальные сценарии готовы для проверки, но демо-каталог не содержит аудио, реальных обложек или лицензированных текстов. В нём только вымышленные исполнители/альбомы/треки и оригинальные короткие тестовые строки. Пока провайдер не вернёт аудиопоток, приложение не изображает, что звук играет.
 
+Подробности подключения — в [MUSIC_SOURCE_INTEGRATION.md](MUSIC_SOURCE_INTEGRATION.md).
 
-## Iteration: native iOS player
+## Сборка
 
-- Navigation now uses the native iOS tab bar; the mini-player sits directly above it. The root view expands to the available window instead of constraining itself to a card.
-- The expanded player animates the active lyric line. Artist names open a discography sheet.
-- Playback uses AVAudioSession playback mode and declares the audio background mode. Playback metadata is exposed through a WidgetKit Live Activity and Dynamic Island.
-- The app icon is generated for each Actions build from a new record-shaped Rhythm mark.
-- This prototype still contains one public-domain instrumental sample, so its traditional lyrics are an animation/demo fixture rather than synchronized lyrics. New catalog recommendations and real lyric timing require a connected music/lyrics provider.
+Sources/Rhythm — единственная iOS-цель пользовательского приложения; Sources/RhythmWidget — расширение Live Activity. GitHub Actions формирует неподписанный IPA для установки через Sideloadly. Локальный Mac не требуется.

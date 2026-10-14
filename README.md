@@ -1,29 +1,30 @@
 # Rhythm
 
-A cross-platform music app prototype for iOS and Android, built with Expo + React Native + TypeScript.
+iOS-приложение для музыки с нативным интерфейсом SwiftUI. IPA собирается GitHub Actions, поэтому для установки через Sideloadly Mac не нужен.
 
-## Current prototype
-- Editorial interface with home, search, My Wave, library and settings
-- Persistent mini-player and Now Playing modal
-- Working persisted System/Dark/Light appearance and accent colors
-- Blurred artwork background and active lyric-line emphasis inside the player
-- A real public-domain traditional recording for playback testing (Wikimedia Commons); see [test media and attribution](docs/TEST_MEDIA.md)
-- Other items are clearly labelled demo content
+## Что сейчас работает
 
-## Run
-Requires Node.js LTS.
+- Библиотека с сохранёнными и любимыми треками, историей и плейлистами. Данные сохраняются на устройстве.
+- Поиск по локальному каталогу: название, исполнитель, альбом и настроение.
+- Дискография исполнителя открывается из профиля.
+- «Моя волна» каждый раз заново ранжирует локальный каталог по выбранному настроению, лайкам и истории прослушивания.
+- Мини-плеер остаётся над нижней навигацией; экран плеера открывается поверх текущей вкладки.
+- Текст песни встроен в плеер и плавно выделяет строку по времени.
+- Светлая, тёмная и системная темы, пять акцентных цветов.
+- Очередь, перемешивание, повтор, перемотка и Live Activity при наличии работающего аудиоисточника.
 
-```bash
-npm install
-npx expo start
-```
+## Музыка и источники
 
-Scan the QR code with Expo Go or use an Android emulator.
+Пока нет реального каталога, потоков или обложек. В приложении есть только придуманные демо-метаданные и оригинальные тестовые строки, чтобы проверить интерфейс. Кнопка воспроизведения честно сообщает, что источник ещё не подключён; никакие сторонние аудиофайлы в сборку не зашиты.
 
-## Important status
-Only the Scarborough Fair test recording has a remote audio source. Live catalog search, licensed synchronized lyrics, a true personalized recommendation service, persistent likes/playlists/history, and production-ready provider integrations are not complete. The lyric timestamps are approximate UI-test values, not official synchronization metadata. The My Wave demo button does not claim to be a live recommendation service.
+Точка подключения находится в [документе по источникам](docs/MUSIC_SOURCE_INTEGRATION.md). Я могу подключить выбранный тобой источник отдельно, когда ты будешь готов.
 
-## Low-token development
-Use Gemini Flash High for small scoped changes. Inspect only relevant files. Switch to Claude Sonnet only after two focused attempts fail on the same reproducible issue. Avoid full rewrites and don't claim tests/builds that were not run.
+## IPA
 
-See [product specification](docs/PRODUCT_SPEC.md) and [implementation tasks](docs/ANTIGRAVITY_TASKS.md).
+Открой [GitHub Actions](https://github.com/isnoth1ng-prog/rhythmn/actions/workflows/ios-build.yml), выбери успешный запуск workflow iOS build и скачай артефакт rhythm-iphone-ipa. Перетащи IPA в Sideloadly и установи на телефон. Последний запуск после крупных изменений нужно дождаться до зелёного статуса.
+
+## Структура
+
+Sources/Rhythm — основное приложение, которое попадает в IPA.  
+Sources/RhythmWidget — Live Activity и Dynamic Island.  
+app/ и src/ — ранний Expo-прототип; workflow iOS IPA их не собирает.
