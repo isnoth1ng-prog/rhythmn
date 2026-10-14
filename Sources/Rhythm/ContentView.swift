@@ -349,8 +349,12 @@ private struct SearchScreen: View {
     private var filteredTracks: [Track] {
         let results = model.searchTracks(query)
         switch filter {
-        case .all, .tracks: results
-        case .artists: query.isEmpty ? [] : results.filter { track in model.searchArtists(query).contains(where: { $0.id == track.artistID }) }
+        case .all, .tracks:
+            return results
+        case .artists:
+            guard !query.isEmpty else { return [] }
+            let matchingArtistIDs = Set(model.searchArtists(query).map(\.id))
+            return results.filter { matchingArtistIDs.contains($0.artistID) }
         }
     }
 
@@ -827,7 +831,7 @@ private struct PlaylistCard: View {
     }
 }
 
-private struct EmptyPanel: View {
+struct EmptyPanel: View {
     let title: String
     let message: String
     let actionTitle: String?
@@ -862,7 +866,7 @@ private struct EmptyPanel: View {
     }
 }
 
-private struct TrackRow: View {
+struct TrackRow: View {
     @ObservedObject var model: RhythmAppModel
     let track: Track
     let onPlay: () -> Void
