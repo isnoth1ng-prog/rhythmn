@@ -52,12 +52,20 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           build
 
-      - name: Validate app bundle identifiers
+      - name: Validate installable app bundles
         run: |
           APP="build-device/Build/Products/Release-iphoneos/Rhythm.app"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist"
-          test -d "$APP/PlugIns/RhythmWidget.appex"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/PlugIns/RhythmWidget.appex/Info.plist"
+          APP_PLIST="$APP/Info.plist"
+          EXT="$APP/PlugIns/RhythmWidget.appex"
+          EXT_PLIST="$EXT/Info.plist"
+          test -x "$APP/Rhythm"
+          test -x "$EXT/RhythmWidget"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PLIST")" = "com.isnoth1ngprog.rhythmn"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PLIST")" = "Rhythm"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PLIST")" = "1"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$EXT_PLIST")" = "com.isnoth1ngprog.rhythmn.widget"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$EXT_PLIST")" = "RhythmWidget"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$EXT_PLIST")" = "1"
 
       - name: Package unsigned IPA for Sideloadly
         run: |
