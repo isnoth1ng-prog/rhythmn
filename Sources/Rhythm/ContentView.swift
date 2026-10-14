@@ -210,7 +210,7 @@ private struct LibraryScreen: View {
                     subtitle: "Твоя личная библиотека",
                     tracks: model.savedTracks,
                     emptyTitle: "Здесь пока тихо",
-                    emptyText: "Добавляй треки из поиска или демо-каталога.",
+                    emptyText: "Ищи треки в каталоге Apple Music или слушай локальную демо-коллекцию.",
                     emptyAction: openSearch,
                     emptyActionTitle: "Открыть поиск",
                     queue: model.savedTracks
@@ -600,7 +600,7 @@ private struct WaveScreen: View {
                     }
                 }
 
-                Text("Пока используется локальный демо-каталог. Рекомендации станут шире после подключения твоего источника музыки.")
+                Text("Рекомендации учитывают настроение, лайки и историю в локальной библиотеке. Поиск в каталоге Apple Music доступен отдельно.")
                     .font(.system(size: 11))
                     .foregroundStyle(RhythmPalette.muted(light))
                     .fixedSize(horizontal: false, vertical: true)
@@ -754,10 +754,10 @@ private struct SettingsScreen: View {
                                 .frame(width: 43, height: 43)
                                 .background(model.accent.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 15))
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Пока не подключён")
+                                Text("Каталог Apple Music")
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundStyle(RhythmPalette.text(light))
-                                Text("Поиск и рекомендации сейчас работают на демо-каталоге.")
+                                Text("Поиск и превью доступны, если MusicKit включён для приложения и разрешён в iOS. Полные композиции пока не воспроизводятся.")
                                     .font(.system(size: 12))
                                     .foregroundStyle(RhythmPalette.muted(light))
                                     .fixedSize(horizontal: false, vertical: true)
@@ -926,7 +926,7 @@ struct TrackRow: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(RhythmPalette.text(light))
                             .lineLimit(1)
-                        Text(track.artist)
+                        Text(track.audioSource == .appleMusicPreview ? "\(track.artist) · превью" : track.artist)
                             .font(.system(size: 12))
                             .foregroundStyle(RhythmPalette.muted(light))
                             .lineLimit(1)
@@ -983,7 +983,7 @@ private struct MiniPlayer: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(RhythmPalette.text(light))
                             .lineLimit(1)
-                        Text(track.artist)
+                        Text(track.audioSource == .appleMusicPreview ? "\(track.artist) · превью" : track.artist)
                             .font(.system(size: 11))
                             .foregroundStyle(RhythmPalette.muted(light))
                             .lineLimit(1)

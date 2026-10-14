@@ -51,4 +51,27 @@ final class PlaybackQueueTests: XCTestCase {
 
         XCTAssertEqual(queue.previous()?.id, tracks[0].id)
     }
+
+    func testTrackDecodesLegacyStoredPayloadWithoutProviderFields() throws {
+        let legacyJSON = """
+        {
+          "id": "legacy-track",
+          "title": "Old title",
+          "artist": "Old artist",
+          "artistID": "old-artist",
+          "album": "Old album",
+          "duration": 180,
+          "tags": ["Focus"],
+          "tone": "glacier",
+          "lyrics": [{"id": 0, "start": 0, "text": "Line"}]
+        }
+        """
+
+        let track = try JSONDecoder().decode(Track.self, from: Data(legacyJSON.utf8))
+
+        XCTAssertEqual(track.id, "legacy-track")
+        XCTAssertNil(track.artworkURL)
+        XCTAssertNil(track.audioPreviewURL)
+        XCTAssertEqual(track.audioSource, .demo)
+    }
 }

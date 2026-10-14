@@ -130,7 +130,12 @@ struct NowPlayingView: View {
             Spacer()
 
             VStack(spacing: 3) {
-                Eyebrow(text: model.isPlaying ? "СЕЙЧАС ИГРАЕТ" : "ВЫБРАННЫЙ ТРЕК", color: model.accent.color)
+                Eyebrow(
+                    text: model.currentTrack?.audioSource == .appleMusicPreview
+                        ? "APPLE MUSIC · ПРЕВЬЮ"
+                        : (model.isPlaying ? "СЕЙЧАС ИГРАЕТ" : "ВЫБРАННЫЙ ТРЕК"),
+                    color: model.accent.color
+                )
                 Text("RHYTHM PLAYER")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .tracking(1.4)

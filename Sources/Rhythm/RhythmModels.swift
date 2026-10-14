@@ -43,6 +43,45 @@ struct Track: Identifiable, Codable, Hashable {
     var audioSource: TrackAudioSource = .demo
 }
 
+extension Track {
+    private enum CodingKeys: String, CodingKey {
+        case id, title, artist, artistID, album, duration, tags, tone, lyrics
+        case artworkURL, audioPreviewURL, audioSource
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        title = try values.decode(String.self, forKey: .title)
+        artist = try values.decode(String.self, forKey: .artist)
+        artistID = try values.decode(String.self, forKey: .artistID)
+        album = try values.decode(String.self, forKey: .album)
+        duration = try values.decode(TimeInterval.self, forKey: .duration)
+        tags = try values.decode([String].self, forKey: .tags)
+        tone = try values.decode(ArtworkTone.self, forKey: .tone)
+        lyrics = try values.decode([LyricLine].self, forKey: .lyrics)
+        artworkURL = try values.decodeIfPresent(URL.self, forKey: .artworkURL)
+        audioPreviewURL = try values.decodeIfPresent(URL.self, forKey: .audioPreviewURL)
+        audioSource = try values.decodeIfPresent(TrackAudioSource.self, forKey: .audioSource) ?? .demo
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(title, forKey: .title)
+        try values.encode(artist, forKey: .artist)
+        try values.encode(artistID, forKey: .artistID)
+        try values.encode(album, forKey: .album)
+        try values.encode(duration, forKey: .duration)
+        try values.encode(tags, forKey: .tags)
+        try values.encode(tone, forKey: .tone)
+        try values.encode(lyrics, forKey: .lyrics)
+        try values.encodeIfPresent(artworkURL, forKey: .artworkURL)
+        try values.encodeIfPresent(audioPreviewURL, forKey: .audioPreviewURL)
+        try values.encode(audioSource, forKey: .audioSource)
+    }
+}
+
 struct ArtistProfile: Identifiable, Hashable {
     let id: String
     let name: String

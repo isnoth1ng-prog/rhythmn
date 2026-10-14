@@ -1,6 +1,6 @@
 import Foundation
 
-/// Replace this adapter when connecting a real catalog, streaming provider, and lyrics service.
+/// Protocol shared by the local fallback and configured catalog providers.
 protocol MusicSource {
     func loadCatalog() async throws -> [Track]
     func searchCatalog(_ query: String) async throws -> [Track]
