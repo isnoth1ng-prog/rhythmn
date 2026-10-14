@@ -1,5 +1,17 @@
 import SwiftUI
 
+private struct RhythmMinimalEffectsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var rhythmMinimalEffects: Bool {
+        get { self[RhythmMinimalEffectsKey.self] }
+        set { self[RhythmMinimalEffectsKey.self] = newValue }
+    }
+}
+
+
 enum RhythmPalette {
     static func background(_ light: Bool) -> Color {
         light ? Color(red: 0.95, green: 0.95, blue: 0.94) : Color(red: 0.035, green: 0.043, blue: 0.052)
@@ -50,6 +62,7 @@ extension ArtworkTone {
 }
 
 struct TrackArtwork: View {
+    @Environment(\.rhythmMinimalEffects) private var minimalEffects
     let track: Track
     var size: CGFloat
     var showsTitle = true
@@ -77,13 +90,13 @@ struct TrackArtwork: View {
                     Circle()
                         .fill(.white.opacity(0.10))
                         .frame(width: side * 0.48, height: side * 0.48)
-                        .blur(radius: side * 0.05)
+                        .blur(radius: minimalEffects ? 0 : side * 0.05)
                         .offset(x: -side * 0.27, y: side * 0.29)
 
                     Image(systemName: "waveform")
                         .font(.system(size: side * 0.23, weight: .medium, design: .rounded))
                         .foregroundStyle(.white.opacity(0.86))
-                        .shadow(color: .black.opacity(0.18), radius: side * 0.04, y: side * 0.02)
+                        .shadow(color: minimalEffects ? .clear : .black.opacity(0.18), radius: minimalEffects ? 0 : side * 0.04, y: side * 0.02)
                 }
 
                 if showsTitle {
@@ -115,7 +128,7 @@ struct TrackArtwork: View {
                 RoundedRectangle(cornerRadius: max(14, side * 0.13), style: .continuous)
                     .stroke(.white.opacity(0.16), lineWidth: 1)
             }
-            .shadow(color: track.tone.colors.last?.opacity(0.24) ?? .clear, radius: side * 0.09, y: side * 0.05)
+            .shadow(color: minimalEffects ? .clear : (track.tone.colors.last?.opacity(0.24) ?? .clear), radius: minimalEffects ? 0 : side * 0.09, y: side * 0.05)
         }
         .frame(width: size, height: size)
         .accessibilityLabel("\(track.title), \(track.artist)")

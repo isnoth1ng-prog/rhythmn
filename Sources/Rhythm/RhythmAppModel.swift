@@ -98,6 +98,12 @@ final class RhythmAppModel: ObservableObject {
     @Published var accent: AccentTone {
         didSet { UserDefaults.standard.set(accent.rawValue, forKey: "rhythm.v2.accent") }
     }
+    @Published var minimalEffects: Bool {
+        didSet { UserDefaults.standard.set(minimalEffects, forKey: "rhythm.v2.minimalEffects") }
+    }
+    @Published var animationsEnabled: Bool {
+        didSet { UserDefaults.standard.set(animationsEnabled, forKey: "rhythm.v2.animationsEnabled") }
+    }
 
     @Published private(set) var currentTrack: Track?
     @Published private(set) var currentLyrics: [LyricLine] = []
@@ -129,6 +135,8 @@ final class RhythmAppModel: ObservableObject {
         playlists = Self.load([RhythmPlaylist].self, key: "rhythm.v2.playlists", fallback: [])
         appearance = AppAppearance(rawValue: UserDefaults.standard.string(forKey: "rhythm.v2.appearance") ?? "") ?? .dark
         accent = AccentTone(rawValue: UserDefaults.standard.string(forKey: "rhythm.v2.accent") ?? "") ?? .mint
+        minimalEffects = UserDefaults.standard.bool(forKey: "rhythm.v2.minimalEffects")
+        animationsEnabled = UserDefaults.standard.object(forKey: "rhythm.v2.animationsEnabled") as? Bool ?? true
         RhythmNowPlayingController.configure(
             play: { [weak self] in
                 guard let self, !self.isPlaying else { return }

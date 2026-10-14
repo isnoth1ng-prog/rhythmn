@@ -15,6 +15,7 @@ private enum RootSheet: Identifiable {
 }
 
 struct ContentView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var model = RhythmAppModel()
     @State private var selectedTab: RhythmTab = .home
     @State private var activeSheet: RootSheet?
@@ -63,7 +64,16 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(model.appearance.preferredColorScheme)
-        .animation(.spring(response: 0.36, dampingFraction: 0.86), value: model.currentTrack?.id)
+        .environment(\.rhythmMinimalEffects, model.minimalEffects)
+        .transaction { transaction in
+            if reduceMotion || !model.animationsEnabled {
+                transaction.animation = nil
+            }
+        }
+        .animation(
+            model.animationsEnabled && !reduceMotion ? .spring(response: 0.36, dampingFraction: 0.86) : nil,
+            value: model.currentTrack?.id
+        )
         .sheet(item: $activeSheet) { route in
             switch route {
             case .player:
@@ -749,6 +759,40 @@ private struct SettingsScreen: View {
                                 .buttonStyle(.plain)
                             }
                         }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeading(title: "Эффекты", light: light)
+                    SurfaceCard(light: light) {
+                        VStack(spacing: 8) {
+                            Toggle(isOn: $model.minimalEffects) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Минимум визуальных эффектов")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(RhythmPalette.text(light))
+                                    Text("Снижает размытие и тени обложек.")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(RhythmPalette.muted(light))
+                                }
+                            }
+                            .tint(model.accent.color)
+
+                            Divider().overlay(RhythmPalette.border(light))
+
+                            Toggle(isOn: $model.animationsEnabled) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Анимации")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(RhythmPalette.text(light))
+                                    Text("Также учитывается системный Reduce Motion.")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(RhythmPalette.muted(light))
+                                }
+                            }
+                            .tint(model.accent.color)
+                        }
+                        .padding(15)
                     }
                 }
 
