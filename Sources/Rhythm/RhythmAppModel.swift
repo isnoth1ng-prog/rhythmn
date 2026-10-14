@@ -121,8 +121,7 @@ final class RhythmAppModel: ObservableObject {
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
-    private var queue: [Track] = []
-    private var queueIndex = 0
+    private var queue = PlaybackQueue()
     private var activeRequest = UUID()
 
     init(source: MusicSource = DemoMusicSource()) {
@@ -251,15 +250,7 @@ final class RhythmAppModel: ObservableObject {
 
     func play(_ track: Track, in proposedQueue: [Track]? = nil) {
         playbackNotice = nil
-        if let proposedQueue, !proposedQueue.isEmpty {
-            queue = proposedQueue
-            queueIndex = queue.firstIndex(where: { $0.id == track.id }) ?? 0
-        } else if queue.firstIndex(where: { $0.id == track.id }) == nil {
-            queue = [track]
-            queueIndex = 0
-        } else {
-            queueIndex = queue.firstIndex(where: { $0.id == track.id }) ?? 0
-        }
+        queue.select(track, from: proposedQueue)
 
         currentTrack = track
         currentLyrics = track.lyrics
@@ -320,34 +311,22 @@ final class RhythmAppModel: ObservableObject {
     }
 
     func previousTrack() {
-        guard !queue.isEmpty else { return }
+        guard !queue.tracks.isEmpty else { return }
         if currentTime > 3 {
             seek(to: 0)
             return
         }
-        let previous = max(queueIndex - 1, 0)
-        queueIndex = previous
-        play(queue[previous], in: queue)
+        let currentQueue = queue.tracks
+        guard let previous = queue.previous() else { return }
+        play(previous, in: currentQueue)
     }
 
     func nextTrack() {
-        guard !queue.isEmpty else { return }
-        if repeatMode == .one, let currentTrack {
-            play(currentTrack, in: queue)
-            return
-        }
-        if isShuffling, queue.count > 1 {
-            let choices = queue.indices.filter { $0 != queueIndex }
-            queueIndex = choices.randomElement() ?? queueIndex
-        } else if queueIndex + 1 < queue.count {
-            queueIndex += 1
-        } else if repeatMode == .all {
-            queueIndex = 0
-        } else {
+        guard let next = queue.advance(shuffling: isShuffling, repeatMode: repeatMode) else {
             stopPlayback()
             return
         }
-        play(queue[queueIndex], in: queue)
+        play(next, in: queue.tracks)
     }
 
     func cycleRepeatMode() {
