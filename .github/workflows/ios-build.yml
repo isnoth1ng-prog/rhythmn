@@ -52,6 +52,35 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           build
 
+      - name: Ensure extension metadata survives build
+        run: |
+          APP="build-device/Build/Products/Release-iphoneos/Rhythm.app"
+          APP_PLIST="$APP/Info.plist"
+          EXT="$APP/PlugIns/RhythmWidget.appex"
+          EXT_PLIST="$EXT/Info.plist"
+
+          # Xcode 16.4 produced the .appex without NSExtension in the current IPA.
+          # Restore the WidgetKit extension dictionary only if the build output omitted it.
+          if ! /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$EXT_PLIST" >/dev/null 2>&1; then
+            if /usr/libexec/PlistBuddy -c 'Print :NSExtension' "$EXT_PLIST" >/dev/null 2>&1; then
+              /usr/libexec/PlistBuddy -c 'Delete :NSExtension' "$EXT_PLIST"
+            fi
+            /usr/libexec/PlistBuddy -c 'Add :NSExtension dict' "$EXT_PLIST"
+            /usr/libexec/PlistBuddy -c 'Add :NSExtension:NSExtensionPointIdentifier string com.apple.widgetkit-extension' "$EXT_PLIST"
+          fi
+
+          # Preserve app-level declarations required for Live Activities and background audio.
+          if ! /usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' "$APP_PLIST" >/dev/null 2>&1; then
+            /usr/libexec/PlistBuddy -c 'Add :NSSupportsLiveActivities bool true' "$APP_PLIST"
+          fi
+          if ! /usr/libexec/PlistBuddy -c 'Print :UIBackgroundModes' "$APP_PLIST" >/dev/null 2>&1; then
+            /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes array' "$APP_PLIST"
+            /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string audio' "$APP_PLIST"
+          fi
+
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$EXT_PLIST")" = "com.apple.widgetkit-extension"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' "$APP_PLIST")" = "true"
+
       - name: Validate installable app bundles
         run: |
           APP="build-device/Build/Products/Release-iphoneos/Rhythm.app"
@@ -66,6 +95,8 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$EXT_PLIST")" = "com.isnoth1ngprog.rhythmn.widget"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$EXT_PLIST")" = "RhythmWidget"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$EXT_PLIST")" = "1"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$EXT_PLIST")" = "com.apple.widgetkit-extension"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' "$APP_PLIST")" = "true"
 
       - name: Package unsigned IPA for Sideloadly
         run: |
