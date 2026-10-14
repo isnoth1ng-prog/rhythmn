@@ -54,11 +54,11 @@ struct HomeScreen: View {
                         homeSectionTitle("Продолжить")
                         Button {
                             if model.currentTrack?.id == track.id {
-                                openPlayer()
+                                if !model.isPlaying { model.togglePlayback() }
                             } else {
                                 model.play(track, in: model.recentlyPlayed)
-                                openPlayer()
                             }
+                            openPlayer()
                         } label: {
                             HStack(spacing: 13) {
                                 TrackArtwork(track: track, size: 62, showsTitle: false)

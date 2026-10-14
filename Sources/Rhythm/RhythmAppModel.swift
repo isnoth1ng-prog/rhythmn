@@ -548,13 +548,21 @@ final class RhythmAppModel: ObservableObject {
     }
 
     private static func load<Value: Decodable>(_ type: Value.Type, key: String, fallback: Value) -> Value {
-        guard let data = UserDefaults.standard.data(forKey: key),
-              let decoded = try? JSONDecoder().decode(type, from: data) else { return fallback }
-        return decoded
+        guard let data = UserDefaults.standard.data(forKey: key) else { return fallback }
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            print("Rhythm could not restore saved data for \(key): \(error.localizedDescription)")
+            return fallback
+        }
     }
 
     private static func save<Value: Encodable>(_ value: Value, key: String) {
-        guard let data = try? JSONEncoder().encode(value) else { return }
-        UserDefaults.standard.set(data, forKey: key)
+        do {
+            let data = try JSONEncoder().encode(value)
+            UserDefaults.standard.set(data, forKey: key)
+        } catch {
+            print("Rhythm could not encode saved data for \(key): \(error.localizedDescription)")
+        }
     }
 }
