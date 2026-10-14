@@ -72,6 +72,7 @@ final class PlaybackQueueTests: XCTestCase {
         XCTAssertEqual(track.id, "legacy-track")
         XCTAssertNil(track.artworkURL)
         XCTAssertNil(track.audioPreviewURL)
+        XCTAssertNil(track.localAudioURL)
         XCTAssertEqual(track.audioSource, .demo)
     }
 }

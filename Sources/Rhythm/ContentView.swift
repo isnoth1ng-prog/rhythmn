@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 private enum RootSheet: Identifiable {
     case player
@@ -147,6 +148,7 @@ private struct LibraryScreen: View {
     let openPlaylist: (String) -> Void
     let openSearch: () -> Void
     @State private var showingPlaylistPrompt = false
+    @State private var showingAudioImporter = false
     @State private var playlistName = ""
 
     private var light: Bool { model.appearance == .light }
@@ -162,6 +164,51 @@ private struct LibraryScreen: View {
                 )
 
                 libraryHero
+
+                Button { showingAudioImporter = true } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: model.isImportingAudio ? "ellipsis" : "square.and.arrow.down")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(model.accent.color)
+                            .frame(width: 44, height: 44)
+                            .background(model.accent.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 15))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(model.isImportingAudio ? "Импортируем аудио…" : "Импортировать аудиофайлы")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(RhythmPalette.text(light))
+                            Text("Файлы копируются в приложение и доступны офлайн.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(RhythmPalette.muted(light))
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "plus")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(model.accent.color)
+                    }
+                    .padding(13)
+                    .background(RhythmPalette.surface(light), in: RoundedRectangle(cornerRadius: 20))
+                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(RhythmPalette.border(light), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(model.isImportingAudio)
+
+                if let notice = model.importNotice {
+                    HStack(alignment: .top, spacing: 10) {
+                        Text(notice)
+                            .font(.system(size: 12))
+                            .foregroundStyle(RhythmPalette.text(light))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button { model.importNotice = nil } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(RhythmPalette.muted(light))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Скрыть сообщение об импорте")
+                    }
+                    .padding(13)
+                    .background(RhythmPalette.surface(light), in: RoundedRectangle(cornerRadius: 17))
+                }
 
                 HStack(spacing: 12) {
                     SummaryTile(title: "Сохранено", value: "\(model.savedTracks.count)", symbol: "bookmark.fill", model: model)
@@ -259,6 +306,16 @@ private struct LibraryScreen: View {
             .padding(.bottom, 22)
         }
         .scrollIndicators(.hidden)
+        .fileImporter(isPresented: $showingAudioImporter, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls):
+                Task { await model.importLocalAudio(from: urls) }
+            case .failure(let error):
+                if (error as NSError).code != NSUserCancelledError {
+                    model.importNotice = "Не удалось выбрать аудио: \(error.localizedDescription)"
+                }
+            }
+        }
         .alert("Новый плейлист", isPresented: $showingPlaylistPrompt) {
             TextField("Название", text: $playlistName)
             Button("Создать") {

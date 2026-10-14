@@ -13,22 +13,23 @@ enum RepeatMode: String {
 }
 
 
-struct LyricLine: Identifiable, Codable, Hashable {
+struct LyricLine: Identifiable, Codable, Hashable, Sendable {
     let id: Int
     let start: TimeInterval
     let text: String
 }
 
-enum ArtworkTone: String, CaseIterable, Codable, Hashable {
+enum ArtworkTone: String, CaseIterable, Codable, Hashable, Sendable {
     case glacier, ember, orchid, moss, cobalt, amber, rose, graphite
 }
 
-enum TrackAudioSource: String, Codable, Hashable {
+enum TrackAudioSource: String, Codable, Hashable, Sendable {
     case demo
     case appleMusicPreview
+    case localFile
 }
 
-struct Track: Identifiable, Codable, Hashable {
+struct Track: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let title: String
     let artist: String
@@ -40,13 +41,14 @@ struct Track: Identifiable, Codable, Hashable {
     let lyrics: [LyricLine]
     var artworkURL: URL? = nil
     var audioPreviewURL: URL? = nil
+    var localAudioURL: URL? = nil
     var audioSource: TrackAudioSource = .demo
 }
 
 extension Track {
     private enum CodingKeys: String, CodingKey {
         case id, title, artist, artistID, album, duration, tags, tone, lyrics
-        case artworkURL, audioPreviewURL, audioSource
+        case artworkURL, audioPreviewURL, localAudioURL, audioSource
     }
 
     init(from decoder: Decoder) throws {
@@ -62,6 +64,7 @@ extension Track {
         lyrics = try values.decode([LyricLine].self, forKey: .lyrics)
         artworkURL = try values.decodeIfPresent(URL.self, forKey: .artworkURL)
         audioPreviewURL = try values.decodeIfPresent(URL.self, forKey: .audioPreviewURL)
+        localAudioURL = try values.decodeIfPresent(URL.self, forKey: .localAudioURL)
         audioSource = try values.decodeIfPresent(TrackAudioSource.self, forKey: .audioSource) ?? .demo
     }
 
@@ -78,6 +81,7 @@ extension Track {
         try values.encode(lyrics, forKey: .lyrics)
         try values.encodeIfPresent(artworkURL, forKey: .artworkURL)
         try values.encodeIfPresent(audioPreviewURL, forKey: .audioPreviewURL)
+        try values.encodeIfPresent(localAudioURL, forKey: .localAudioURL)
         try values.encode(audioSource, forKey: .audioSource)
     }
 }

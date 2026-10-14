@@ -87,6 +87,8 @@ final class RhythmAppModel: ObservableObject {
     @Published private(set) var catalogSearchMessage: String?
     @Published private(set) var isSearchingCatalog = false
     @Published private(set) var didSearchCatalog = false
+    @Published private(set) var isImportingAudio = false
+    @Published var importNotice: String?
     @Published private(set) var savedIDs: Set<String>
     @Published private(set) var likedIDs: Set<String>
     @Published private(set) var recentIDs: [String]
@@ -118,6 +120,7 @@ final class RhythmAppModel: ObservableObject {
     @Published var repeatMode: RepeatMode = .off
 
     private let source: MusicSource
+    private let localAudioImporter = LocalAudioImporter()
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
@@ -259,6 +262,29 @@ final class RhythmAppModel: ObservableObject {
             catalogSearchResults = []
             didSearchCatalog = true
             catalogSearchMessage = "Apple Music сейчас недоступен: \(error.localizedDescription) Локальный демо-каталог остаётся доступен."
+        }
+    }
+
+    func importLocalAudio(from urls: [URL]) async {
+        guard !urls.isEmpty else { return }
+        isImportingAudio = true
+        importNotice = nil
+        defer { isImportingAudio = false }
+
+        let result = await localAudioImporter.importFiles(urls)
+        if !result.tracks.isEmpty {
+            let importedIDs = Set(result.tracks.map(\.id))
+            tracks = Array((result.tracks + tracks.filter { !importedIDs.contains($0.id) }).prefix(500))
+            Self.save(tracks, key: "rhythm.v2.catalogCache")
+            refreshWave()
+        }
+
+        if result.failures.isEmpty {
+            importNotice = "Добавлено файлов: \(result.tracks.count). Они сохранены на устройстве."
+        } else if result.tracks.isEmpty {
+            importNotice = "Не удалось импортировать файлы: " + result.failures.joined(separator: "; ")
+        } else {
+            importNotice = "Добавлено файлов: \(result.tracks.count). Не удалось импортировать: " + result.failures.joined(separator: "; ")
         }
     }
 
@@ -440,9 +466,14 @@ final class RhythmAppModel: ObservableObject {
             guard let url else {
                 clearPlayer()
                 isPlaying = false
-                playbackNotice = track.audioSource == .appleMusicPreview
-                    ? "У этого результата нет доступного аудиопревью Apple Music."
-                    : "Демо-каталог содержит только тестовые метаданные. Найди трек в Apple Music, чтобы послушать доступное превью."
+                switch track.audioSource {
+                case .appleMusicPreview:
+                    playbackNotice = "У этого результата нет доступного аудиопревью Apple Music."
+                case .localFile:
+                    playbackNotice = "Не удалось открыть локальный аудиофайл. Импортируй его снова из коллекции."
+                case .demo:
+                    playbackNotice = "Демо-каталог содержит только тестовые метаданные. Найди трек в Apple Music, чтобы послушать доступное превью."
+                }
                 RhythmNowPlayingController.update(track: track, playbackTime: 0, duration: track.duration, isPlaying: false)
                 await RhythmActivityController.endAll()
                 do {

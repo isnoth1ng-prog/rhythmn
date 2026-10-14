@@ -28,7 +28,8 @@ struct MusicKitMusicSource: MusicSource {
     }
 
     func audioURL(for track: Track) async throws -> URL? {
-        track.audioPreviewURL
+        if track.audioSource == .localFile { return track.localAudioURL }
+        return track.audioPreviewURL
     }
 
     func lyrics(for track: Track) async throws -> [LyricLine]? {
