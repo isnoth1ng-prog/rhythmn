@@ -3,6 +3,7 @@ import AVFAudio
 import AVFoundation
 import Combine
 import Foundation
+import MediaPlayer
 import SwiftUI
 
 enum AppAppearance: String, CaseIterable, Identifiable {
@@ -133,6 +134,20 @@ final class RhythmAppModel: ObservableObject {
         playlists = Self.load([RhythmPlaylist].self, key: "rhythm.v2.playlists", fallback: [])
         appearance = AppAppearance(rawValue: UserDefaults.standard.string(forKey: "rhythm.v2.appearance") ?? "") ?? .dark
         accent = AccentTone(rawValue: UserDefaults.standard.string(forKey: "rhythm.v2.accent") ?? "") ?? .mint
+        RhythmNowPlayingController.configure(
+            play: { [weak self] in
+                guard let self, !self.isPlaying else { return }
+                self.togglePlayback()
+            },
+            pause: { [weak self] in
+                guard let self, self.isPlaying else { return }
+                self.togglePlayback()
+            },
+            toggle: { [weak self] in self?.togglePlayback() },
+            next: { [weak self] in self?.nextTrack() },
+            previous: { [weak self] in self?.previousTrack() },
+            seek: { [weak self] time in self?.seek(to: time) }
+        )
         Task { await reloadCatalog() }
     }
 
@@ -249,6 +264,7 @@ final class RhythmAppModel: ObservableObject {
         currentTrack = track
         currentLyrics = track.lyrics
         currentTime = 0
+        RhythmNowPlayingController.update(track: track, playbackTime: 0, duration: track.duration, isPlaying: false)
         duration = track.duration
         Task { await resolveAndPlay(track) }
     }
@@ -264,10 +280,12 @@ final class RhythmAppModel: ObservableObject {
         if isPlaying {
             player.pause()
             isPlaying = false
+            RhythmNowPlayingController.update(track: currentTrack, playbackTime: currentTime, duration: duration, isPlaying: false)
             Task { await RhythmActivityController.endAll() }
         } else {
             player.play()
             isPlaying = true
+            RhythmNowPlayingController.update(track: currentTrack, playbackTime: currentTime, duration: duration, isPlaying: true)
             Task { await RhythmActivityController.start(trackTitle: currentTrack.title, artist: currentTrack.artist) }
         }
     }
@@ -277,6 +295,7 @@ final class RhythmAppModel: ObservableObject {
         isLoading = false
         clearPlayer()
         currentTrack = nil
+        RhythmNowPlayingController.clear()
         currentLyrics = []
         currentTime = 0
         duration = 0
@@ -287,6 +306,7 @@ final class RhythmAppModel: ObservableObject {
     func seek(to time: TimeInterval) {
         let clamped = min(max(0, time), max(duration, 0))
         currentTime = clamped
+        RhythmNowPlayingController.update(track: currentTrack, playbackTime: clamped, duration: duration, isPlaying: isPlaying)
         guard let player else { return }
         player.seek(to: CMTime(seconds: clamped, preferredTimescale: 600))
     }
@@ -374,16 +394,28 @@ final class RhythmAppModel: ObservableObject {
                 clearPlayer()
                 isPlaying = false
                 playbackNotice = "Аудиоисточник не подключён. Этот экран готов к подключению через MusicSource.swift."
+                RhythmNowPlayingController.update(track: track, playbackTime: 0, duration: track.duration, isPlaying: false)
                 await RhythmActivityController.endAll()
-                if let lyrics = try? await source.lyrics(for: track) {
-                    currentLyrics = lyrics
+                do {
+                    currentLyrics = try await source.lyrics(for: track) ?? track.lyrics
+                } catch {
+                    currentLyrics = track.lyrics
                 }
                 return
             }
 
             clearPlayer()
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
-            try? AVAudioSession.sharedInstance().setActive(true)
+            do {
+                try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
+                try AVAudioSession.sharedInstance().setActive(true)
+            } catch {
+                clearPlayer()
+                isPlaying = false
+                playbackNotice = "Не удалось подготовить аудиосессию: \(error.localizedDescription)"
+                RhythmNowPlayingController.update(track: track, playbackTime: currentTime, duration: duration, isPlaying: false)
+                await RhythmActivityController.endAll()
+                return
+            }
 
             let item = AVPlayerItem(url: url)
             let newPlayer = AVPlayer(playerItem: item)
@@ -392,17 +424,21 @@ final class RhythmAppModel: ObservableObject {
             addObservers(for: item, player: newPlayer)
             newPlayer.play()
             isPlaying = true
+            RhythmNowPlayingController.update(track: track, playbackTime: 0, duration: duration, isPlaying: true)
             playbackNotice = nil
             recordPlayed(track)
             await RhythmActivityController.start(trackTitle: track.title, artist: track.artist)
-            if let lyrics = try? await source.lyrics(for: track) {
-                currentLyrics = lyrics
+            do {
+                currentLyrics = try await source.lyrics(for: track) ?? track.lyrics
+            } catch {
+                currentLyrics = track.lyrics
             }
         } catch {
             guard activeRequest == requestID else { return }
             clearPlayer()
             isPlaying = false
             playbackNotice = "Не удалось открыть аудио: \(error.localizedDescription)"
+            RhythmNowPlayingController.update(track: currentTrack, playbackTime: currentTime, duration: duration, isPlaying: false)
             await RhythmActivityController.endAll()
         }
     }
