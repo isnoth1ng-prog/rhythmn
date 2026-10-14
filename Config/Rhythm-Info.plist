@@ -16,6 +16,8 @@
     <string>1</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
+    <key>NSAppleMusicUsageDescription</key>
+    <string>Rhythm uses Apple Music to search the catalog and play available previews when you request a search.</string>
     <key>NSSupportsLiveActivities</key>
     <true/>
     <key>UIBackgroundModes</key>

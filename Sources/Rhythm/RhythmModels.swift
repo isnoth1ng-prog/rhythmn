@@ -1,16 +1,35 @@
 import Foundation
 
-struct LyricLine: Identifiable, Codable, Hashable {
+enum RepeatMode: String {
+    case off, all, one
+
+    var icon: String {
+        switch self {
+        case .off: "repeat"
+        case .all: "repeat"
+        case .one: "repeat.1"
+        }
+    }
+}
+
+
+struct LyricLine: Identifiable, Codable, Hashable, Sendable {
     let id: Int
     let start: TimeInterval
     let text: String
 }
 
-enum ArtworkTone: String, CaseIterable, Codable, Hashable {
+enum ArtworkTone: String, CaseIterable, Codable, Hashable, Sendable {
     case glacier, ember, orchid, moss, cobalt, amber, rose, graphite
 }
 
-struct Track: Identifiable, Codable, Hashable {
+enum TrackAudioSource: String, Codable, Hashable, Sendable {
+    case demo
+    case appleMusicPreview
+    case localFile
+}
+
+struct Track: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let title: String
     let artist: String
@@ -20,6 +39,51 @@ struct Track: Identifiable, Codable, Hashable {
     let tags: [String]
     let tone: ArtworkTone
     let lyrics: [LyricLine]
+    var artworkURL: URL? = nil
+    var audioPreviewURL: URL? = nil
+    var localAudioURL: URL? = nil
+    var audioSource: TrackAudioSource = .demo
+}
+
+extension Track {
+    private enum CodingKeys: String, CodingKey {
+        case id, title, artist, artistID, album, duration, tags, tone, lyrics
+        case artworkURL, audioPreviewURL, localAudioURL, audioSource
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        title = try values.decode(String.self, forKey: .title)
+        artist = try values.decode(String.self, forKey: .artist)
+        artistID = try values.decode(String.self, forKey: .artistID)
+        album = try values.decode(String.self, forKey: .album)
+        duration = try values.decode(TimeInterval.self, forKey: .duration)
+        tags = try values.decode([String].self, forKey: .tags)
+        tone = try values.decode(ArtworkTone.self, forKey: .tone)
+        lyrics = try values.decode([LyricLine].self, forKey: .lyrics)
+        artworkURL = try values.decodeIfPresent(URL.self, forKey: .artworkURL)
+        audioPreviewURL = try values.decodeIfPresent(URL.self, forKey: .audioPreviewURL)
+        localAudioURL = try values.decodeIfPresent(URL.self, forKey: .localAudioURL)
+        audioSource = try values.decodeIfPresent(TrackAudioSource.self, forKey: .audioSource) ?? .demo
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(title, forKey: .title)
+        try values.encode(artist, forKey: .artist)
+        try values.encode(artistID, forKey: .artistID)
+        try values.encode(album, forKey: .album)
+        try values.encode(duration, forKey: .duration)
+        try values.encode(tags, forKey: .tags)
+        try values.encode(tone, forKey: .tone)
+        try values.encode(lyrics, forKey: .lyrics)
+        try values.encodeIfPresent(artworkURL, forKey: .artworkURL)
+        try values.encodeIfPresent(audioPreviewURL, forKey: .audioPreviewURL)
+        try values.encodeIfPresent(localAudioURL, forKey: .localAudioURL)
+        try values.encode(audioSource, forKey: .audioSource)
+    }
 }
 
 struct ArtistProfile: Identifiable, Hashable {

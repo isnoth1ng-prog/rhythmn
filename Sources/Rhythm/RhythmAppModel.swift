@@ -3,6 +3,7 @@ import AVFAudio
 import AVFoundation
 import Combine
 import Foundation
+import MediaPlayer
 import SwiftUI
 
 enum AppAppearance: String, CaseIterable, Identifiable {
@@ -53,37 +54,27 @@ enum AccentTone: String, CaseIterable, Identifiable {
     }
 }
 
-enum RepeatMode: String {
-    case off, all, one
-
-    var icon: String {
-        switch self {
-        case .off: "repeat"
-        case .all: "repeat"
-        case .one: "repeat.1"
-        }
-    }
-}
-
 enum RhythmTab: String, CaseIterable, Identifiable {
-    case library, search, wave, settings
+    case home, wave, search, library, settings
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .library: "Музыка"
+        case .home: "Главная"
+        case .wave: "Моя волна"
         case .search: "Поиск"
-        case .wave: "Волна"
+        case .library: "Коллекция"
         case .settings: "Настройки"
         }
     }
 
     var symbol: String {
         switch self {
-        case .library: "square.stack.3d.up"
-        case .search: "magnifyingglass"
+        case .home: "house"
         case .wave: "waveform.path"
+        case .search: "magnifyingglass"
+        case .library: "square.stack.3d.up"
         case .settings: "slider.horizontal.3"
         }
     }
@@ -92,6 +83,12 @@ enum RhythmTab: String, CaseIterable, Identifiable {
 @MainActor
 final class RhythmAppModel: ObservableObject {
     @Published private(set) var tracks: [Track] = DemoCatalog.tracks
+    @Published private(set) var catalogSearchResults: [Track] = []
+    @Published private(set) var catalogSearchMessage: String?
+    @Published private(set) var isSearchingCatalog = false
+    @Published private(set) var didSearchCatalog = false
+    @Published private(set) var isImportingAudio = false
+    @Published var importNotice: String?
     @Published private(set) var savedIDs: Set<String>
     @Published private(set) var likedIDs: Set<String>
     @Published private(set) var recentIDs: [String]
@@ -102,6 +99,12 @@ final class RhythmAppModel: ObservableObject {
     }
     @Published var accent: AccentTone {
         didSet { UserDefaults.standard.set(accent.rawValue, forKey: "rhythm.v2.accent") }
+    }
+    @Published var minimalEffects: Bool {
+        didSet { UserDefaults.standard.set(minimalEffects, forKey: "rhythm.v2.minimalEffects") }
+    }
+    @Published var animationsEnabled: Bool {
+        didSet { UserDefaults.standard.set(animationsEnabled, forKey: "rhythm.v2.animationsEnabled") }
     }
 
     @Published private(set) var currentTrack: Track?
@@ -117,15 +120,17 @@ final class RhythmAppModel: ObservableObject {
     @Published var repeatMode: RepeatMode = .off
 
     private let source: MusicSource
+    private let localAudioImporter = LocalAudioImporter()
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
-    private var queue: [Track] = []
-    private var queueIndex = 0
+    private var queue = PlaybackQueue()
     private var activeRequest = UUID()
+    private var catalogSearchRequest = UUID()
 
-    init(source: MusicSource = DemoMusicSource()) {
+    init(source: MusicSource = MusicKitMusicSource()) {
         self.source = source
+        tracks = Self.load([Track].self, key: "rhythm.v2.catalogCache", fallback: DemoCatalog.tracks)
         savedIDs = Self.load(Set<String>.self, key: "rhythm.v2.saved", fallback: [])
         likedIDs = Self.load(Set<String>.self, key: "rhythm.v2.liked", fallback: [])
         recentIDs = Self.load([String].self, key: "rhythm.v2.recent", fallback: [])
@@ -133,6 +138,22 @@ final class RhythmAppModel: ObservableObject {
         playlists = Self.load([RhythmPlaylist].self, key: "rhythm.v2.playlists", fallback: [])
         appearance = AppAppearance(rawValue: UserDefaults.standard.string(forKey: "rhythm.v2.appearance") ?? "") ?? .dark
         accent = AccentTone(rawValue: UserDefaults.standard.string(forKey: "rhythm.v2.accent") ?? "") ?? .mint
+        minimalEffects = UserDefaults.standard.bool(forKey: "rhythm.v2.minimalEffects")
+        animationsEnabled = UserDefaults.standard.object(forKey: "rhythm.v2.animationsEnabled") as? Bool ?? true
+        RhythmNowPlayingController.configure(
+            play: { [weak self] in
+                guard let self, !self.isPlaying else { return }
+                self.togglePlayback()
+            },
+            pause: { [weak self] in
+                guard let self, self.isPlaying else { return }
+                self.togglePlayback()
+            },
+            toggle: { [weak self] in self?.togglePlayback() },
+            next: { [weak self] in self?.nextTrack() },
+            previous: { [weak self] in self?.previousTrack() },
+            seek: { [weak self] time in self?.seek(to: time) }
+        )
         Task { await reloadCatalog() }
     }
 
@@ -168,8 +189,102 @@ final class RhythmAppModel: ObservableObject {
     func searchArtists(_ query: String) -> [ArtistProfile] {
         let needle = Self.normalized(query)
         guard !needle.isEmpty else { return [] }
-        return DemoCatalog.artists.filter {
-            Self.normalized("\($0.name) \($0.note)").contains(needle)
+        let artistIDs = Set(tracks.map(\.artistID))
+        return artistIDs.compactMap { artistID in
+            let track = tracks.first { $0.artistID == artistID }
+            let known = DemoCatalog.artists.first { $0.id == artistID }
+            let profile = known ?? track.map {
+                ArtistProfile(
+                    id: artistID,
+                    name: $0.artist,
+                    note: $0.audioSource == .appleMusicPreview ? "Apple Music" : "Исполнитель Rhythm",
+                    tone: $0.tone
+                )
+            }
+            guard let profile,
+                  Self.normalized("\(profile.name) \(profile.note)").contains(needle) else { return nil }
+            return profile
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    func artistProfile(id: String) -> ArtistProfile? {
+        if let known = DemoCatalog.artists.first(where: { $0.id == id }) { return known }
+        guard let track = tracks.first(where: { $0.artistID == id }) else { return nil }
+        return ArtistProfile(
+            id: id,
+            name: track.artist,
+            note: track.audioSource == .appleMusicPreview ? "Apple Music" : "Исполнитель Rhythm",
+            tone: track.tone
+        )
+    }
+
+    func clearCatalogSearch() {
+        catalogSearchRequest = UUID()
+        catalogSearchResults = []
+        catalogSearchMessage = nil
+        isSearchingCatalog = false
+        didSearchCatalog = false
+    }
+
+    func searchCatalog(_ query: String) async {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else {
+            clearCatalogSearch()
+            return
+        }
+
+        let requestID = UUID()
+        catalogSearchRequest = requestID
+        isSearchingCatalog = true
+        catalogSearchMessage = nil
+        didSearchCatalog = false
+        defer {
+            if catalogSearchRequest == requestID {
+                isSearchingCatalog = false
+            }
+        }
+
+        do {
+            let results = try await source.searchCatalog(term)
+            guard catalogSearchRequest == requestID else { return }
+            catalogSearchResults = results
+            didSearchCatalog = true
+            if results.isEmpty {
+                catalogSearchMessage = "В Apple Music не нашлось треков по этому запросу. Ниже показан локальный демо-каталог."
+                return
+            }
+            let resultIDs = Set(results.map(\.id))
+            tracks = Array((results + tracks.filter { !resultIDs.contains($0.id) }).prefix(500))
+            Self.save(tracks, key: "rhythm.v2.catalogCache")
+        } catch {
+            guard catalogSearchRequest == requestID else { return }
+            catalogSearchResults = []
+            didSearchCatalog = true
+            catalogSearchMessage = "Apple Music сейчас недоступен: \(error.localizedDescription) Локальный демо-каталог остаётся доступен."
+        }
+    }
+
+    func importLocalAudio(from urls: [URL]) async {
+        guard !urls.isEmpty else { return }
+        isImportingAudio = true
+        importNotice = nil
+        defer { isImportingAudio = false }
+
+        let result = await localAudioImporter.importFiles(urls)
+        if !result.tracks.isEmpty {
+            let importedIDs = Set(result.tracks.map(\.id))
+            tracks = Array((result.tracks + tracks.filter { !importedIDs.contains($0.id) }).prefix(500))
+            Self.save(tracks, key: "rhythm.v2.catalogCache")
+            refreshWave()
+        }
+
+        if result.failures.isEmpty {
+            importNotice = "Добавлено файлов: \(result.tracks.count). Они сохранены на устройстве."
+        } else if result.tracks.isEmpty {
+            importNotice = "Не удалось импортировать файлы: " + result.failures.joined(separator: "; ")
+        } else {
+            importNotice = "Добавлено файлов: \(result.tracks.count). Не удалось импортировать: " + result.failures.joined(separator: "; ")
         }
     }
 
@@ -211,22 +326,13 @@ final class RhythmAppModel: ObservableObject {
     }
 
     func refreshWave() {
-        let likedTags = likedTracks.flatMap(\.tags)
-        let historyTags = recentlyPlayed.prefix(4).flatMap(\.tags)
-        var candidates = tracks.filter { !recentIDs.prefix(3).contains($0.id) }
-        if candidates.isEmpty { candidates = tracks }
-
-        waveQueue = candidates
-            .map { track -> (Track, Double) in
-                var score = Double.random(in: 0...0.8)
-                if waveMood != "Случайно", track.tags.contains(waveMood) { score += 4 }
-                score += Double(likedTags.filter { track.tags.contains($0) }.count) * 1.7
-                score += Double(historyTags.filter { track.tags.contains($0) }.count) * 0.35
-                score -= Double(playCounts[track.id, default: 0]) * 0.4
-                return (track, score)
-            }
-            .sorted { $0.1 > $1.1 }
-            .map(\.0)
+        waveQueue = LocalRecommendationEngine.rank(
+            tracks: tracks,
+            mood: waveMood,
+            likedIDs: likedIDs,
+            recentIDs: recentIDs,
+            playCounts: playCounts
+        )
     }
 
     func playFromWave(_ track: Track) {
@@ -236,19 +342,12 @@ final class RhythmAppModel: ObservableObject {
 
     func play(_ track: Track, in proposedQueue: [Track]? = nil) {
         playbackNotice = nil
-        if let proposedQueue, !proposedQueue.isEmpty {
-            queue = proposedQueue
-            queueIndex = queue.firstIndex(where: { $0.id == track.id }) ?? 0
-        } else if queue.firstIndex(where: { $0.id == track.id }) == nil {
-            queue = [track]
-            queueIndex = 0
-        } else {
-            queueIndex = queue.firstIndex(where: { $0.id == track.id }) ?? 0
-        }
+        queue.select(track, from: proposedQueue)
 
         currentTrack = track
         currentLyrics = track.lyrics
         currentTime = 0
+        RhythmNowPlayingController.update(track: track, playbackTime: 0, duration: track.duration, isPlaying: false)
         duration = track.duration
         Task { await resolveAndPlay(track) }
     }
@@ -264,10 +363,12 @@ final class RhythmAppModel: ObservableObject {
         if isPlaying {
             player.pause()
             isPlaying = false
+            RhythmNowPlayingController.update(track: currentTrack, playbackTime: currentTime, duration: duration, isPlaying: false)
             Task { await RhythmActivityController.endAll() }
         } else {
             player.play()
             isPlaying = true
+            RhythmNowPlayingController.update(track: currentTrack, playbackTime: currentTime, duration: duration, isPlaying: true)
             Task { await RhythmActivityController.start(trackTitle: currentTrack.title, artist: currentTrack.artist) }
         }
     }
@@ -277,6 +378,7 @@ final class RhythmAppModel: ObservableObject {
         isLoading = false
         clearPlayer()
         currentTrack = nil
+        RhythmNowPlayingController.clear()
         currentLyrics = []
         currentTime = 0
         duration = 0
@@ -287,6 +389,7 @@ final class RhythmAppModel: ObservableObject {
     func seek(to time: TimeInterval) {
         let clamped = min(max(0, time), max(duration, 0))
         currentTime = clamped
+        RhythmNowPlayingController.update(track: currentTrack, playbackTime: clamped, duration: duration, isPlaying: isPlaying)
         guard let player else { return }
         player.seek(to: CMTime(seconds: clamped, preferredTimescale: 600))
     }
@@ -300,34 +403,22 @@ final class RhythmAppModel: ObservableObject {
     }
 
     func previousTrack() {
-        guard !queue.isEmpty else { return }
+        guard !queue.tracks.isEmpty else { return }
         if currentTime > 3 {
             seek(to: 0)
             return
         }
-        let previous = max(queueIndex - 1, 0)
-        queueIndex = previous
-        play(queue[previous], in: queue)
+        let currentQueue = queue.tracks
+        guard let previous = queue.previous() else { return }
+        play(previous, in: currentQueue)
     }
 
     func nextTrack() {
-        guard !queue.isEmpty else { return }
-        if repeatMode == .one, let currentTrack {
-            play(currentTrack, in: queue)
-            return
-        }
-        if isShuffling, queue.count > 1 {
-            let choices = queue.indices.filter { $0 != queueIndex }
-            queueIndex = choices.randomElement() ?? queueIndex
-        } else if queueIndex + 1 < queue.count {
-            queueIndex += 1
-        } else if repeatMode == .all {
-            queueIndex = 0
-        } else {
+        guard let next = queue.advance(shuffling: isShuffling, repeatMode: repeatMode) else {
             stopPlayback()
             return
         }
-        play(queue[queueIndex], in: queue)
+        play(next, in: queue.tracks)
     }
 
     func cycleRepeatMode() {
@@ -352,7 +443,9 @@ final class RhythmAppModel: ObservableObject {
         do {
             let loaded = try await source.loadCatalog()
             guard !loaded.isEmpty else { return }
-            tracks = loaded
+            let loadedIDs = Set(loaded.map(\.id))
+            tracks = Array((loaded + tracks.filter { !loadedIDs.contains($0.id) }).prefix(500))
+            Self.save(tracks, key: "rhythm.v2.catalogCache")
             refreshWave()
         } catch {
             playbackNotice = "Не удалось загрузить каталог: \(error.localizedDescription)"
@@ -373,17 +466,36 @@ final class RhythmAppModel: ObservableObject {
             guard let url else {
                 clearPlayer()
                 isPlaying = false
-                playbackNotice = "Аудиоисточник не подключён. Этот экран готов к подключению через MusicSource.swift."
+                switch track.audioSource {
+                case .appleMusicPreview:
+                    playbackNotice = "У этого результата нет доступного аудиопревью Apple Music."
+                case .localFile:
+                    playbackNotice = "Не удалось открыть локальный аудиофайл. Импортируй его снова из коллекции."
+                case .demo:
+                    playbackNotice = "Демо-каталог содержит только тестовые метаданные. Найди трек в Apple Music, чтобы послушать доступное превью."
+                }
+                RhythmNowPlayingController.update(track: track, playbackTime: 0, duration: track.duration, isPlaying: false)
                 await RhythmActivityController.endAll()
-                if let lyrics = try? await source.lyrics(for: track) {
-                    currentLyrics = lyrics
+                do {
+                    currentLyrics = try await source.lyrics(for: track) ?? track.lyrics
+                } catch {
+                    currentLyrics = track.lyrics
                 }
                 return
             }
 
             clearPlayer()
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
-            try? AVAudioSession.sharedInstance().setActive(true)
+            do {
+                try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
+                try AVAudioSession.sharedInstance().setActive(true)
+            } catch {
+                clearPlayer()
+                isPlaying = false
+                playbackNotice = "Не удалось подготовить аудиосессию: \(error.localizedDescription)"
+                RhythmNowPlayingController.update(track: track, playbackTime: currentTime, duration: duration, isPlaying: false)
+                await RhythmActivityController.endAll()
+                return
+            }
 
             let item = AVPlayerItem(url: url)
             let newPlayer = AVPlayer(playerItem: item)
@@ -392,17 +504,21 @@ final class RhythmAppModel: ObservableObject {
             addObservers(for: item, player: newPlayer)
             newPlayer.play()
             isPlaying = true
+            RhythmNowPlayingController.update(track: track, playbackTime: 0, duration: duration, isPlaying: true)
             playbackNotice = nil
             recordPlayed(track)
             await RhythmActivityController.start(trackTitle: track.title, artist: track.artist)
-            if let lyrics = try? await source.lyrics(for: track) {
-                currentLyrics = lyrics
+            do {
+                currentLyrics = try await source.lyrics(for: track) ?? track.lyrics
+            } catch {
+                currentLyrics = track.lyrics
             }
         } catch {
             guard activeRequest == requestID else { return }
             clearPlayer()
             isPlaying = false
             playbackNotice = "Не удалось открыть аудио: \(error.localizedDescription)"
+            RhythmNowPlayingController.update(track: currentTrack, playbackTime: currentTime, duration: duration, isPlaying: false)
             await RhythmActivityController.endAll()
         }
     }
@@ -463,13 +579,21 @@ final class RhythmAppModel: ObservableObject {
     }
 
     private static func load<Value: Decodable>(_ type: Value.Type, key: String, fallback: Value) -> Value {
-        guard let data = UserDefaults.standard.data(forKey: key),
-              let decoded = try? JSONDecoder().decode(type, from: data) else { return fallback }
-        return decoded
+        guard let data = UserDefaults.standard.data(forKey: key) else { return fallback }
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            print("Rhythm could not restore saved data for \(key): \(error.localizedDescription)")
+            return fallback
+        }
     }
 
     private static func save<Value: Encodable>(_ value: Value, key: String) {
-        guard let data = try? JSONEncoder().encode(value) else { return }
-        UserDefaults.standard.set(data, forKey: key)
+        do {
+            let data = try JSONEncoder().encode(value)
+            UserDefaults.standard.set(data, forKey: key)
+        } catch {
+            print("Rhythm could not encode saved data for \(key): \(error.localizedDescription)")
+        }
     }
 }

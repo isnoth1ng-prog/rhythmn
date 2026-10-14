@@ -5,6 +5,7 @@ private struct ArtistRoute: Identifiable {
 }
 
 struct NowPlayingView: View {
+    @Environment(\.rhythmMinimalEffects) private var minimalEffects
     @ObservedObject var model: RhythmAppModel
     @Environment(\.dismiss) private var dismiss
     @State private var lyricsVisible = true
@@ -17,8 +18,8 @@ struct NowPlayingView: View {
                 GeometryReader { geometry in
                     ZStack {
                         TrackArtwork(track: track, size: max(geometry.size.width, geometry.size.height) * 0.82, showsTitle: false)
-                            .blur(radius: 72)
-                            .opacity(light ? 0.18 : 0.27)
+                            .blur(radius: minimalEffects ? 0 : 72)
+                            .opacity(minimalEffects ? (light ? 0.05 : 0.08) : (light ? 0.18 : 0.27))
                             .scaleEffect(1.28)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -130,7 +131,12 @@ struct NowPlayingView: View {
             Spacer()
 
             VStack(spacing: 3) {
-                Eyebrow(text: model.isPlaying ? "СЕЙЧАС ИГРАЕТ" : "ВЫБРАННЫЙ ТРЕК", color: model.accent.color)
+                Eyebrow(
+                    text: model.currentTrack?.audioSource == .appleMusicPreview
+                        ? "APPLE MUSIC · ПРЕВЬЮ"
+                        : (model.isPlaying ? "СЕЙЧАС ИГРАЕТ" : "ВЫБРАННЫЙ ТРЕК"),
+                    color: model.accent.color
+                )
                 Text("RHYTHM PLAYER")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .tracking(1.4)
@@ -359,7 +365,7 @@ struct ArtistDiscographyView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var light: Bool { model.appearance == .light }
-    private var artist: ArtistProfile? { DemoCatalog.artist(id: artistID) }
+    private var artist: ArtistProfile? { model.artistProfile(id: artistID) }
     private var discography: [Track] { model.tracks(for: artistID) }
 
     var body: some View {

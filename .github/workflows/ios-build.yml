@@ -25,6 +25,9 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Run shared core tests
+        run: swift test --package-path .
+
       - name: Build iOS Simulator app
         run: >-
           xcodebuild

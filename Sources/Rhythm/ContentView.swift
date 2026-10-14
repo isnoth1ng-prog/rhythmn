@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 private enum RootSheet: Identifiable {
     case player
@@ -15,8 +16,9 @@ private enum RootSheet: Identifiable {
 }
 
 struct ContentView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var model = RhythmAppModel()
-    @State private var selectedTab: RhythmTab = .library
+    @State private var selectedTab: RhythmTab = .home
     @State private var activeSheet: RootSheet?
 
     private var light: Bool { model.appearance == .light }
@@ -28,6 +30,13 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 Group {
                     switch selectedTab {
+                    case .home:
+                        HomeScreen(
+                            model: model,
+                            openPlayer: { activeSheet = .player },
+                            openSearch: { selectedTab = .search },
+                            openWave: { selectedTab = .wave }
+                        )
                     case .library:
                         LibraryScreen(model: model, openPlayer: { activeSheet = .player }, openPlaylist: { activeSheet = .playlist($0) }, openSearch: { selectedTab = .search })
                     case .search:
@@ -56,7 +65,16 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(model.appearance.preferredColorScheme)
-        .animation(.spring(response: 0.36, dampingFraction: 0.86), value: model.currentTrack?.id)
+        .environment(\.rhythmMinimalEffects, model.minimalEffects)
+        .transaction { transaction in
+            if reduceMotion || !model.animationsEnabled {
+                transaction.animation = nil
+            }
+        }
+        .animation(
+            model.animationsEnabled && !reduceMotion ? .spring(response: 0.36, dampingFraction: 0.86) : nil,
+            value: model.currentTrack?.id
+        )
         .sheet(item: $activeSheet) { route in
             switch route {
             case .player:
@@ -130,6 +148,7 @@ private struct LibraryScreen: View {
     let openPlaylist: (String) -> Void
     let openSearch: () -> Void
     @State private var showingPlaylistPrompt = false
+    @State private var showingAudioImporter = false
     @State private var playlistName = ""
 
     private var light: Bool { model.appearance == .light }
@@ -145,6 +164,51 @@ private struct LibraryScreen: View {
                 )
 
                 libraryHero
+
+                Button { showingAudioImporter = true } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: model.isImportingAudio ? "ellipsis" : "square.and.arrow.down")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(model.accent.color)
+                            .frame(width: 44, height: 44)
+                            .background(model.accent.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 15))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(model.isImportingAudio ? "Импортируем аудио…" : "Импортировать аудиофайлы")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(RhythmPalette.text(light))
+                            Text("Файлы копируются в приложение и доступны офлайн.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(RhythmPalette.muted(light))
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "plus")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(model.accent.color)
+                    }
+                    .padding(13)
+                    .background(RhythmPalette.surface(light), in: RoundedRectangle(cornerRadius: 20))
+                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(RhythmPalette.border(light), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(model.isImportingAudio)
+
+                if let notice = model.importNotice {
+                    HStack(alignment: .top, spacing: 10) {
+                        Text(notice)
+                            .font(.system(size: 12))
+                            .foregroundStyle(RhythmPalette.text(light))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button { model.importNotice = nil } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(RhythmPalette.muted(light))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Скрыть сообщение об импорте")
+                    }
+                    .padding(13)
+                    .background(RhythmPalette.surface(light), in: RoundedRectangle(cornerRadius: 17))
+                }
 
                 HStack(spacing: 12) {
                     SummaryTile(title: "Сохранено", value: "\(model.savedTracks.count)", symbol: "bookmark.fill", model: model)
@@ -210,7 +274,7 @@ private struct LibraryScreen: View {
                     subtitle: "Твоя личная библиотека",
                     tracks: model.savedTracks,
                     emptyTitle: "Здесь пока тихо",
-                    emptyText: "Добавляй треки из поиска или демо-каталога.",
+                    emptyText: "Ищи треки в каталоге Apple Music или слушай локальную демо-коллекцию.",
                     emptyAction: openSearch,
                     emptyActionTitle: "Открыть поиск",
                     queue: model.savedTracks
@@ -242,6 +306,16 @@ private struct LibraryScreen: View {
             .padding(.bottom, 22)
         }
         .scrollIndicators(.hidden)
+        .fileImporter(isPresented: $showingAudioImporter, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls):
+                Task { await model.importLocalAudio(from: urls) }
+            case .failure(let error):
+                if (error as NSError).code != NSUserCancelledError {
+                    model.importNotice = "Не удалось выбрать аудио: \(error.localizedDescription)"
+                }
+            }
+        }
         .alert("Новый плейлист", isPresented: $showingPlaylistPrompt) {
             TextField("Название", text: $playlistName)
             Button("Создать") {
@@ -347,7 +421,9 @@ private struct SearchScreen: View {
 
     private var light: Bool { model.appearance == .light }
     private var filteredTracks: [Track] {
-        let results = model.searchTracks(query)
+        let results = model.didSearchCatalog && !model.catalogSearchResults.isEmpty
+            ? model.catalogSearchResults
+            : model.searchTracks(query)
         switch filter {
         case .all, .tracks:
             return results
@@ -457,8 +533,27 @@ private struct SearchScreen: View {
                         }
                     }
 
+                    if model.isSearchingCatalog {
+                        HStack(spacing: 9) {
+                            ProgressView().tint(model.accent.color)
+                            Text("Ищем в Apple Music")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(RhythmPalette.muted(light))
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    if let message = model.catalogSearchMessage {
+                        Text(message)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(RhythmPalette.muted(light))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RhythmPalette.surface(light), in: RoundedRectangle(cornerRadius: 15))
+                    }
+
                     VStack(alignment: .leading, spacing: 12) {
-                        SectionHeading(title: "Треки", light: light)
+                        SectionHeading(title: model.didSearchCatalog && !model.catalogSearchResults.isEmpty ? "Apple Music" : "Треки", light: light)
                         if filteredTracks.isEmpty {
                             EmptyPanel(title: "Ничего не найдено", message: "Попробуй другое название или исполнителя.", actionTitle: nil, action: nil, model: model)
                         } else {
@@ -489,6 +584,20 @@ private struct SearchScreen: View {
         }
         .scrollIndicators(.hidden)
         .scrollDismissesKeyboard(.interactively)
+        .task(id: query) {
+            let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !term.isEmpty else {
+                model.clearCatalogSearch()
+                return
+            }
+            do {
+                try await Task.sleep(for: .milliseconds(350))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await model.searchCatalog(term)
+        }
     }
 }
 
@@ -565,7 +674,7 @@ private struct WaveScreen: View {
                     }
                 }
 
-                Text("Пока используется локальный демо-каталог. Рекомендации станут шире после подключения твоего источника музыки.")
+                Text("Рекомендации учитывают настроение, лайки и историю в локальной библиотеке. Поиск в каталоге Apple Music доступен отдельно.")
                     .font(.system(size: 11))
                     .foregroundStyle(RhythmPalette.muted(light))
                     .fixedSize(horizontal: false, vertical: true)
@@ -710,6 +819,40 @@ private struct SettingsScreen: View {
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
+                    SectionHeading(title: "Эффекты", light: light)
+                    SurfaceCard(light: light) {
+                        VStack(spacing: 8) {
+                            Toggle(isOn: $model.minimalEffects) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Минимум визуальных эффектов")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(RhythmPalette.text(light))
+                                    Text("Снижает размытие и тени обложек.")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(RhythmPalette.muted(light))
+                                }
+                            }
+                            .tint(model.accent.color)
+
+                            Divider().overlay(RhythmPalette.border(light))
+
+                            Toggle(isOn: $model.animationsEnabled) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Анимации")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(RhythmPalette.text(light))
+                                    Text("Также учитывается системный Reduce Motion.")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(RhythmPalette.muted(light))
+                                }
+                            }
+                            .tint(model.accent.color)
+                        }
+                        .padding(15)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
                     SectionHeading(title: "Музыкальный источник", light: light)
                     SurfaceCard(light: light) {
                         HStack(spacing: 13) {
@@ -719,10 +862,10 @@ private struct SettingsScreen: View {
                                 .frame(width: 43, height: 43)
                                 .background(model.accent.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 15))
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Пока не подключён")
+                                Text("Каталог Apple Music")
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundStyle(RhythmPalette.text(light))
-                                Text("Поиск и рекомендации сейчас работают на демо-каталоге.")
+                                Text("Поиск и превью доступны, если MusicKit включён для приложения и разрешён в iOS. Полные композиции пока не воспроизводятся.")
                                     .font(.system(size: 12))
                                     .foregroundStyle(RhythmPalette.muted(light))
                                     .fixedSize(horizontal: false, vertical: true)
@@ -891,7 +1034,7 @@ struct TrackRow: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(RhythmPalette.text(light))
                             .lineLimit(1)
-                        Text(track.artist)
+                        Text(track.audioSource == .appleMusicPreview ? "\(track.artist) · превью" : track.artist)
                             .font(.system(size: 12))
                             .foregroundStyle(RhythmPalette.muted(light))
                             .lineLimit(1)
@@ -948,7 +1091,7 @@ private struct MiniPlayer: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(RhythmPalette.text(light))
                             .lineLimit(1)
-                        Text(track.artist)
+                        Text(track.audioSource == .appleMusicPreview ? "\(track.artist) · превью" : track.artist)
                             .font(.system(size: 11))
                             .foregroundStyle(RhythmPalette.muted(light))
                             .lineLimit(1)
