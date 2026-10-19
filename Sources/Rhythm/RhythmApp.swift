@@ -2,11 +2,15 @@ import SwiftUI
 
 @main
 struct RhythmApp: App {
-    @UIApplicationDelegateAdaptor(RhythmAppDelegate.self) private var appDelegate
-
+    @StateObject private var playerVM = PlayerViewModel()
+    @StateObject private var libraryVM = LibraryViewModel()
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(playerVM)
+                .environmentObject(libraryVM)
+                .preferredColorScheme(.dark)
         }
     }
 }

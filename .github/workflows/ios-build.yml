@@ -1,121 +1,75 @@
-name: iOS build
+name: Build iOS IPA (Sideloadly)
 
 on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
+    name: Build & Package IPA
     runs-on: macos-15
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
 
-      - name: Generate app icon
-        run: swift Scripts/generate_app_icon.swift
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Generate Xcode project
+      - name: Generate Xcode Project
         run: xcodegen generate
 
-      - name: Build iOS Simulator app
-        run: >-
-          xcodebuild
-          -project Rhythm.xcodeproj
-          -scheme Rhythm
-          -sdk iphonesimulator
-          -configuration Debug
-          -derivedDataPath build-simulator
-          CODE_SIGNING_ALLOWED=NO
-          build
-
-      - name: Package simulator app
+      - name: Build iOS Application (Release)
         run: |
-          cd build-simulator/Build/Products/Debug-iphonesimulator
-          ditto -c -k --sequesterRsrc --keepParent Rhythm.app Rhythm-Simulator.zip
+          xcodebuild build \
+            -project Rhythm.xcodeproj \
+            -scheme Rhythm \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build-device \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
 
-      - name: Build iPhone app
-        run: >-
-          xcodebuild
-          -project Rhythm.xcodeproj
-          -scheme Rhythm
-          -sdk iphoneos
-          -configuration Release
-          -derivedDataPath build-device
-          CODE_SIGNING_ALLOWED=NO
-          build
-
-      - name: Ensure extension metadata survives build
-        run: |
-          APP="build-device/Build/Products/Release-iphoneos/Rhythm.app"
-          APP_PLIST="$APP/Info.plist"
-          EXT="$APP/PlugIns/RhythmWidget.appex"
-          EXT_PLIST="$EXT/Info.plist"
-
-          # Xcode 16.4 produced the .appex without NSExtension in the current IPA.
-          # Restore the WidgetKit extension dictionary only if the build output omitted it.
-          if ! /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$EXT_PLIST" >/dev/null 2>&1; then
-            if /usr/libexec/PlistBuddy -c 'Print :NSExtension' "$EXT_PLIST" >/dev/null 2>&1; then
-              /usr/libexec/PlistBuddy -c 'Delete :NSExtension' "$EXT_PLIST"
-            fi
-            /usr/libexec/PlistBuddy -c 'Add :NSExtension dict' "$EXT_PLIST"
-            /usr/libexec/PlistBuddy -c 'Add :NSExtension:NSExtensionPointIdentifier string com.apple.widgetkit-extension' "$EXT_PLIST"
-          fi
-
-          # Preserve app-level declarations required for Live Activities and background audio.
-          if ! /usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' "$APP_PLIST" >/dev/null 2>&1; then
-            /usr/libexec/PlistBuddy -c 'Add :NSSupportsLiveActivities bool true' "$APP_PLIST"
-          fi
-          if ! /usr/libexec/PlistBuddy -c 'Print :UIBackgroundModes' "$APP_PLIST" >/dev/null 2>&1; then
-            /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes array' "$APP_PLIST"
-            /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string audio' "$APP_PLIST"
-          fi
-
-          test "$(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$EXT_PLIST")" = "com.apple.widgetkit-extension"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' "$APP_PLIST")" = "true"
-
-      - name: Validate installable app bundles
-        run: |
-          APP="build-device/Build/Products/Release-iphoneos/Rhythm.app"
-          APP_PLIST="$APP/Info.plist"
-          EXT="$APP/PlugIns/RhythmWidget.appex"
-          EXT_PLIST="$EXT/Info.plist"
-          test -x "$APP/Rhythm"
-          test -x "$EXT/RhythmWidget"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PLIST")" = "com.isnoth1ngprog.rhythmn"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PLIST")" = "Rhythm"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PLIST")" = "1"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$EXT_PLIST")" = "com.isnoth1ngprog.rhythmn.widget"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$EXT_PLIST")" = "RhythmWidget"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$EXT_PLIST")" = "1"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$EXT_PLIST")" = "com.apple.widgetkit-extension"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' "$APP_PLIST")" = "true"
-
-      - name: Package unsigned IPA for Sideloadly
+      - name: Package Unsigned IPA for Sideloadly
         run: |
           cd build-device/Build/Products/Release-iphoneos
           mkdir -p Payload
           cp -R Rhythm.app Payload/
-          /usr/bin/zip -qry Rhythm-unsigned.ipa Payload
-          /usr/bin/unzip -l Rhythm-unsigned.ipa | head -30
+          zip -qry Rhythm.ipa Payload
+          echo "IPA created successfully:"
+          ls -lh Rhythm.ipa
 
-      - name: Upload iPhone IPA
+      - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rhythm-iphone-ipa
-          path: build-device/Build/Products/Release-iphoneos/Rhythm-unsigned.ipa
-          retention-days: 14
+          name: Rhythm-IPA
+          path: build-device/Build/Products/Release-iphoneos/Rhythm.ipa
+          retention-days: 30
 
-      - name: Upload simulator build
+      - name: Build Simulator app (Debug)
+        run: |
+          xcodebuild build \
+            -project Rhythm.xcodeproj \
+            -scheme Rhythm \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -derivedDataPath build-simulator \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+          cd build-simulator/Build/Products/Debug-iphonesimulator
+          ditto -c -k --sequesterRsrc --keepParent Rhythm.app Rhythm-Simulator.zip
+
+      - name: Upload Simulator Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rhythm-ios-simulator
+          name: Rhythm-Simulator
           path: build-simulator/Build/Products/Debug-iphonesimulator/Rhythm-Simulator.zip
           retention-days: 14

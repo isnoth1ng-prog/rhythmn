@@ -1,0 +1,31 @@
+# Xcode
+build/
+build-device/
+build-simulator/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+!default.sublime-project
+*.moved-aside
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+venv/
+ENV/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Output
+*.ipa
+Payload/
+*.zip
