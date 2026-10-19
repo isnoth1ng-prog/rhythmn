@@ -146,10 +146,23 @@ class PlayerViewModel: ObservableObject {
         isLoadingStream = true
         lyrics = nil
         currentLyricIndex = 0
+        
+        // Fast-path: if the track already contains a valid stream URL, start playback immediately
+        if let directUrl = track.streamUrl, !directUrl.isEmpty, let streamURL = URL(string: directUrl) {
+            audioService.play(url: streamURL)
+            isLoadingStream = false
+            loadLyrics(for: track)
+            return
+        }
+        
         Task {
             do {
-                let url = try await apiService.getStreamUrl(trackId: track.id)
-                if let streamURL = URL(string: url) {
+                let url = try await apiService.getStreamUrl(
+                    trackId: track.id,
+                    title: track.title,
+                    artist: track.artist
+                )
+                if !url.isEmpty, let streamURL = URL(string: url) {
                     audioService.play(url: streamURL)
                 }
                 isLoadingStream = false

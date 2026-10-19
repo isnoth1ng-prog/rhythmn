@@ -45,6 +45,27 @@ jobs:
           cd build-device/Build/Products/Release-iphoneos
           mkdir -p Payload
           cp -R Rhythm.app Payload/
+
+          # Compile LaunchScreen storyboard into the app bundle if not already compiled
+          if [ ! -d "Payload/Rhythm.app/LaunchScreen.storyboardc" ]; then
+            echo "Compiling LaunchScreen.storyboard..."
+            ibtool --compile Payload/Rhythm.app/LaunchScreen.storyboardc "$GITHUB_WORKSPACE/Sources/Rhythm/LaunchScreen.storyboard" || true
+          fi
+
+          # Ensure full-screen edge-to-edge support, background audio, and ATS in Info.plist
+          PLIST="Payload/Rhythm.app/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :UILaunchStoryboardName string LaunchScreen" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :UILaunchStoryboardName LaunchScreen" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :UILaunchScreen dict" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :NSAppTransportSecurity:NSAllowsArbitraryLoads true" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string audio" "$PLIST" 2>/dev/null || true
+
+          echo "Inspecting final Info.plist launch & audio configuration:"
+          /usr/libexec/PlistBuddy -c "Print :UILaunchStoryboardName" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Print :UILaunchScreen" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes" "$PLIST" || true
+
           zip -qry Rhythm.ipa Payload
           echo "IPA created successfully:"
           ls -lh Rhythm.ipa

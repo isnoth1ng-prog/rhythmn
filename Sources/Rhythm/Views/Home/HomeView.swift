@@ -4,7 +4,7 @@ struct HomeView: View {
     @EnvironmentObject var playerVM: PlayerViewModel
     @StateObject private var viewModel = HomeViewModel()
     @State private var showSettings: Bool = false
-    @AppStorage("custom_backend_url") private var backendUrl: String = "http://localhost:8000/api"
+    @AppStorage("custom_backend_url") private var backendUrl: String = "http://192.168.0.13:8000/api"
 
     var body: some View {
         NavigationStack {
@@ -68,7 +68,13 @@ struct HomeView: View {
                         await viewModel.loadContent()
                     }
                 }
-                Button("По умолчанию (localhost)", role: .destructive) {
+                Button("Сервер ПК (192.168.0.13)") {
+                    backendUrl = "http://192.168.0.13:8000/api"
+                    Task {
+                        await viewModel.loadContent()
+                    }
+                }
+                Button("По умолчанию (localhost)") {
                     backendUrl = "http://localhost:8000/api"
                     Task {
                         await viewModel.loadContent()
@@ -76,7 +82,7 @@ struct HomeView: View {
                 }
                 Button("Отмена", role: .cancel) {}
             } message: {
-                Text("Укажите адрес сервера VibeFlow (например, http://192.168.1.100:8000/api для локальной сети или адрес вашего VPS).")
+                Text("Укажите адрес сервера VibeFlow (например, http://192.168.0.13:8000/api для ПК с yt-dlp). При недоступности сервера приложение автономно воспроизводит треки и синхронные тексты.")
             }
             .task {
                 await viewModel.loadContent()
