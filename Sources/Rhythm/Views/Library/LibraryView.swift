@@ -8,7 +8,7 @@ struct LibraryView: View {
         NavigationStack {
             ZStack {
                 LinearGradient(
-                    colors: [.appBackground, .appBackgroundSecondary],
+                    colors: [Color.appBackground, Color.appBackgroundSecondary, Color(hex: "08080C")],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -18,80 +18,97 @@ struct LibraryView: View {
                     emptyState
                 } else {
                     ScrollView(.vertical, showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            // Header Stats & Shuffle All Button
-                            HStack {
-                                Text("\(libraryVM.savedTracks.count) треков")
-                                    .font(.system(size: 15, weight: .medium))
-                                    .foregroundColor(.appTextSecondary)
-                                
-                                Spacer()
-                                
-                                Button {
-                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                    var tracks = libraryVM.savedTracks
-                                    tracks.shuffle()
-                                    playerVM.playQueue(tracks: tracks, startIndex: 0)
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "shuffle")
-                                            .font(.system(size: 14, weight: .semibold))
-                                        Text("Перемешать")
-                                            .font(.system(size: 14, weight: .semibold))
-                                    }
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                                    .background(Color.appAccentGradient)
-                                    .clipShape(Capsule())
-                                    .shadow(color: .appAccentPink.opacity(0.4), radius: 8, x: 0, y: 3)
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.top, 10)
+                        VStack(alignment: .leading, spacing: 20) {
+                            // Collection Hero Header
+                            collectionHeroHeader
+                                .padding(.horizontal, 18)
+                                .padding(.top, 10)
                             
                             // Saved Tracks List
-                            LazyVStack(spacing: 4) {
+                            LazyVStack(spacing: 5) {
                                 ForEach(Array(libraryVM.savedTracks.enumerated()), id: \.element.id) { index, track in
                                     TrackRowView(track: track, trackNumber: index + 1) {
                                         playerVM.playQueue(tracks: libraryVM.savedTracks, startIndex: index)
                                     }
+                                    .environmentObject(playerVM)
+                                    .environmentObject(libraryVM)
                                 }
                             }
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, 14)
+                            
+                            Spacer().frame(height: playerVM.currentTrack != nil ? 90 : 30)
                         }
-                        .padding(.bottom, playerVM.currentTrack != nil ? 90 : 24)
                     }
                 }
             }
             .navigationTitle("Моя Библиотека")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.large)
         }
+    }
+    
+    // MARK: - Collection Hero Header
+    
+    private var collectionHeroHeader: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(libraryVM.savedTracks.count) треков в коллекции")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundColor(.appTextSecondary)
+                
+                Text("Любимые треки")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+            }
+            
+            Spacer()
+            
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                var tracks = libraryVM.savedTracks
+                tracks.shuffle()
+                playerVM.playQueue(tracks: tracks, startIndex: 0)
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "shuffle")
+                        .font(.system(size: 14, weight: .bold))
+                    Text("Микс")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background(Color.appAccentGradient)
+                .clipShape(Capsule())
+                .shadow(color: .appAccentPink.opacity(0.45), radius: 10, x: 0, y: 4)
+            }
+        }
+        .padding(.vertical, 8)
     }
     
     // MARK: - Empty State
     
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "music.note.list")
-                .font(.system(size: 64))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.appAccentPink.opacity(0.8), .appAccentPurple.opacity(0.8)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+        VStack(spacing: 18) {
+            ZStack {
+                Circle()
+                    .fill(Color.appAccentPink.opacity(0.12))
+                    .frame(width: 120, height: 120)
+                
+                Image(systemName: "heart.slash.fill")
+                    .font(.system(size: 54))
+                    .foregroundStyle(Color.appAccentGradient)
+            }
             
-            Text("Нет сохранённых треков")
-                .font(.system(size: 20, weight: .bold))
+            Text("Пока нет любимых треков")
+                .font(.system(size: 22, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
             
-            Text("Сохраняйте любимые треки, нажимая ❤️ в плеере или через меню трека")
-                .font(.system(size: 14))
+            Text("Нажимайте ❤️ в плеере или строках треков, чтобы добавлять музыку в свою персональную медиатеку")
+                .font(.system(size: 15, weight: .medium, design: .rounded))
                 .foregroundColor(.appTextSecondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
+                .padding(.horizontal, 36)
         }
+        .padding(.top, 40)
     }
 }

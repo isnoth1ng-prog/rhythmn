@@ -5,56 +5,84 @@ struct TrackCardView: View {
     @EnvironmentObject var playerVM: PlayerViewModel
     @State private var isPressed = false
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            AsyncImage(url: URL(string: track.thumbnailUrl)) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                case .failure:
-                    placeholder
-                case .empty:
-                    placeholder
-                        .shimmer(isActive: true)
-                @unknown default:
-                    placeholder
-                }
-            }
-            .frame(width: 160, height: 160)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 4)
-
-            Text(track.title)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundColor(.white)
-                .lineLimit(1)
-
-            Text(track.artist)
-                .font(.system(size: 12))
-                .foregroundColor(.appTextSecondary)
-                .lineLimit(1)
-        }
-        .frame(width: 160)
-        .scaleEffect(isPressed ? 0.95 : 1.0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)
-        .onTapGesture {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            playerVM.play(track: track)
-        }
-        .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
-            isPressed = pressing
-        }, perform: {})
+    private var isPlayingThis: Bool {
+        playerVM.currentTrack?.id == track.id
     }
 
-    private var placeholder: some View {
-        Rectangle()
-            .fill(Color.appSurface)
-            .overlay {
-                Image(systemName: "music.note")
-                    .font(.system(size: 32))
-                    .foregroundColor(.appTextSecondary)
+    var body: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            playerVM.play(track: track)
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                // Artwork Container with Floating Play Badge
+                ZStack(alignment: .bottomTrailing) {
+                    AsyncImage(url: URL(string: track.thumbnailUrl)) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 156, height: 156)
+                                .clipped()
+                        case .failure, .empty:
+                            ZStack {
+                                Color.appSurface
+                                Image(systemName: "music.note")
+                                    .font(.system(size: 36))
+                                    .foregroundColor(.appTextSecondary)
+                            }
+                            .frame(width: 156, height: 156)
+                        @unknown default:
+                            Color.appSurface
+                                .frame(width: 156, height: 156)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(isPlayingThis ? Color.appAccentPink : Color.white.opacity(0.12), lineWidth: isPlayingThis ? 2 : 1)
+                    )
+                    
+                    // Floating Play / Waveform Badge
+                    ZStack {
+                        Circle()
+                            .fill(isPlayingThis ? Color.appAccentPink : Color.black.opacity(0.65))
+                            .frame(width: 38, height: 38)
+                            .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
+                        
+                        Image(systemName: isPlayingThis && playerVM.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                            .offset(x: (isPlayingThis && playerVM.isPlaying) ? 0 : 1)
+                    }
+                    .padding(10)
+                    .shadow(radius: 6)
+                }
+                .shadow(color: isPlayingThis ? .appAccentPink.opacity(0.35) : .black.opacity(0.4), radius: 10, x: 0, y: 5)
+
+                // Track Details
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(track.title)
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(isPlayingThis ? .appAccentPink : .white)
+                        .lineLimit(1)
+
+                    Text(track.artist)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(.appTextSecondary)
+                        .lineLimit(1)
+                }
+                .frame(width: 156, alignment: .leading)
             }
+            .scaleEffect(isPressed ? 0.94 : 1.0)
+            .animation(.spring(response: 0.28, dampingFraction: 0.65), value: isPressed)
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
+        )
     }
 }

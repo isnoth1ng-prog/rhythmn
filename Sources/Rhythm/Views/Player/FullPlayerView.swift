@@ -6,320 +6,427 @@ struct FullPlayerView: View {
     @Environment(\.dismiss) private var dismiss
     
     @State private var showLyrics: Bool = false
+    @State private var dragOffset: CGFloat = 0
     
     var body: some View {
-        ZStack {
-            // MARK: - Dynamic Blurred Album Background
-            if let track = playerVM.currentTrack {
-                AsyncImage(url: URL(string: track.thumbnailUrl)) { phase in
-                    if let image = phase.image {
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .blur(radius: 65)
-                            .scaleEffect(1.2)
+        GeometryReader { screenGeo in
+            ZStack {
+                // MARK: - Dynamic Ambient Background with Deep Blur
+                ambientBackground
+                
+                // MARK: - Main Player Content
+                VStack(spacing: 0) {
+                    // Safe-Area Aware Header & Dismiss Grabber
+                    topHeaderBar
+                        .padding(.top, max(12, screenGeo.safeAreaInsets.top > 0 ? screenGeo.safeAreaInsets.top : 24))
+                    
+                    Spacer(minLength: 8)
+                    
+                    // Middle Section: Artwork OR Animated Synced Lyrics
+                    if showLyrics {
+                        AnimatedLyricsView()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     } else {
-                        Color.appBackgroundSecondary
+                        artworkSection(screenSize: screenGeo.size)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     }
+                    
+                    Spacer(minLength: 8)
+                    
+                    // Track Information Row
+                    if let track = playerVM.currentTrack {
+                        trackInfoRow(track: track)
+                    }
+                    
+                    // Progress Scrubber & Timers
+                    progressSection
+                        .padding(.top, 8)
+                    
+                    // Primary Playback Controls
+                    playbackControlsSection
+                        .padding(.vertical, 16)
+                    
+                    // Bottom Utility Bar (AirPlay, Lyrics, Queue)
+                    bottomUtilityBar
+                        .padding(.bottom, max(20, screenGeo.safeAreaInsets.bottom > 0 ? screenGeo.safeAreaInsets.bottom : 20))
                 }
-                .ignoresSafeArea()
-                .overlay(Color.black.opacity(0.55).ignoresSafeArea())
-            } else {
-                Color.appBackground.ignoresSafeArea()
+                .padding(.horizontal, 22)
+            }
+            .offset(y: max(0, dragOffset))
+            .animation(.interactiveSpring(response: 0.35, dampingFraction: 0.8), value: dragOffset)
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        if value.translation.height > 0 {
+                            dragOffset = value.translation.height
+                        }
+                    }
+                    .onEnded { value in
+                        if value.translation.height > 100 || value.predictedEndTranslation.height > 200 {
+                            closePlayer()
+                        } else {
+                            dragOffset = 0
+                        }
+                    }
+            )
+        }
+        .ignoresSafeArea()
+    }
+    
+    // MARK: - Top Header Bar
+    
+    private var topHeaderBar: some View {
+        HStack(alignment: .center) {
+            // Dismiss Button (Large 44x44 tap target, clearly visible below Dynamic Island)
+            Button {
+                closePlayer()
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 19, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Color.white.opacity(0.12))
+                    .clipShape(Circle())
+            }
+            .contentShape(Rectangle())
+            
+            Spacer()
+            
+            // Central Pill Grabber (also tappable to dismiss)
+            VStack(spacing: 3) {
+                Capsule()
+                    .fill(Color.white.opacity(0.45))
+                    .frame(width: 38, height: 5)
+                
+                Text(showLyrics ? "Текст песни" : "Сейчас играет")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundColor(.appTextSecondary)
+                    .textCase(.uppercase)
+            }
+            .onTapGesture {
+                closePlayer()
             }
             
-            // MARK: - Foreground Content
-            VStack(spacing: 0) {
-                // Top Grabber & Dismiss
-                HStack {
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        playerVM.showFullPlayer = false
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.white.opacity(0.8))
-                            .frame(width: 44, height: 44)
-                            .background(Color.white.opacity(0.08))
-                            .clipShape(Circle())
-                    }
-                    
-                    Spacer()
-                    
-                    // Center Grabber Indicator
-                    Capsule()
-                        .fill(Color.white.opacity(0.3))
-                        .frame(width: 36, height: 5)
-                    
-                    Spacer()
-                    
-                    // Lyrics Indicator Badge / Quick Toggle
-                    Button {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            showLyrics.toggle()
-                        }
-                    } label: {
-                        Image(systemName: showLyrics ? "quote.bubble.fill" : "quote.bubble")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(showLyrics ? .white : .white.opacity(0.8))
-                            .frame(width: 44, height: 44)
-                            .background(showLyrics ? Color.appAccentPink : Color.white.opacity(0.08))
-                            .clipShape(Circle())
-                    }
+            Spacer()
+            
+            // Quick Lyrics Toggle in Header
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    showLyrics.toggle()
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 14)
-                
-                Spacer().frame(height: 12)
-                
-                // MARK: - Middle View: Either Big Cover OR Inline Animated Lyrics
-                ZStack {
-                    if showLyrics {
-                        // Inline Synced Lyrics Overlay
-                        AnimatedLyricsView()
-                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                    } else {
-                        // Big Cover Artwork
-                        coverArtSection
-                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                
-                // MARK: - Track Info (Compact when lyrics open, full when cover open)
-                if let track = playerVM.currentTrack {
-                    HStack(alignment: .center, spacing: 14) {
-                        if showLyrics {
-                            // Mini thumbnail when lyrics are visible
-                            AsyncImage(url: URL(string: track.thumbnailUrl)) { phase in
-                                if let image = phase.image {
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                } else {
-                                    Color.appSurface
-                                }
-                            }
-                            .frame(width: 48, height: 48)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .shadow(radius: 4)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(track.title)
-                                .font(.system(size: showLyrics ? 18 : 22, weight: .bold))
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                            
-                            Text(track.artist)
-                                .font(.system(size: showLyrics ? 14 : 17, weight: .medium))
-                                .foregroundColor(.appTextSecondary)
-                                .lineLimit(1)
-                        }
-                        
-                        Spacer()
-                        
-                        // Heart / Save Button
-                        Button {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            libraryVM.toggleSaved(track: track)
-                        } label: {
-                            Image(systemName: libraryVM.isTrackSaved(track) ? "heart.fill" : "heart")
-                                .font(.system(size: 24))
-                                .foregroundColor(libraryVM.isTrackSaved(track) ? .appAccentPink : .white.opacity(0.8))
-                                .scaleEffect(libraryVM.isTrackSaved(track) ? 1.15 : 1.0)
-                                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: libraryVM.isTrackSaved(track))
-                        }
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 8)
-                }
-                
-                // MARK: - Progress & Timers
-                VStack(spacing: 6) {
-                    PlayerProgressBar()
-                    
-                    HStack {
-                        Text(formatTime(playerVM.currentTime))
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .foregroundColor(.appTextSecondary)
-                        
-                        Spacer()
-                        
-                        Text(formatTime(max(0, playerVM.duration - playerVM.currentTime)))
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .foregroundColor(.appTextSecondary)
-                    }
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 4)
-                
-                // MARK: - Playback Controls
-                HStack(spacing: 28) {
-                    // Shuffle
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        playerVM.toggleShuffle()
-                    } label: {
-                        Image(systemName: "shuffle")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(playerVM.isShuffled ? .appAccentPink : .white.opacity(0.6))
-                    }
-                    
-                    Spacer()
-                    
-                    // Previous
-                    Button {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        playerVM.previous()
-                    } label: {
-                        Image(systemName: "backward.fill")
-                            .font(.system(size: 28))
-                            .foregroundColor(.white)
-                    }
-                    
-                    // Big Play / Pause Button
-                    Button {
-                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-                        playerVM.togglePlayPause()
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(Color.appAccentGradient)
-                                .frame(width: 72, height: 72)
-                                .shadow(color: .appAccentPink.opacity(0.5), radius: 14, x: 0, y: 5)
-                            
-                            if playerVM.isLoadingStream {
-                                ProgressView()
-                                    .tint(.white)
-                                    .scaleEffect(1.2)
-                            } else {
-                                Image(systemName: playerVM.isPlaying ? "pause.fill" : "play.fill")
-                                    .font(.system(size: 30))
-                                    .foregroundColor(.white)
-                                    .offset(x: playerVM.isPlaying ? 0 : 2)
-                            }
-                        }
-                    }
-                    
-                    // Next
-                    Button {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        playerVM.next()
-                    } label: {
-                        Image(systemName: "forward.fill")
-                            .font(.system(size: 28))
-                            .foregroundColor(.white)
-                    }
-                    
-                    Spacer()
-                    
-                    // Repeat
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        playerVM.toggleRepeat()
-                    } label: {
-                        Image(systemName: playerVM.repeatMode.icon)
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(playerVM.repeatMode.isActive ? .appAccentPink : .white.opacity(0.6))
-                    }
-                }
-                .padding(.horizontal, 28)
-                .padding(.vertical, 16)
-                
-                // MARK: - Bottom Bar (AirPlay + Fullscreen Lyrics Toggle)
-                HStack {
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    } label: {
-                        Image(systemName: "airplayaudio")
-                            .font(.system(size: 18))
-                            .foregroundColor(.white.opacity(0.6))
-                    }
-                    
-                    Spacer()
-                    
-                    Button {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            showLyrics.toggle()
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "quote.bubble.fill")
-                                .font(.system(size: 14))
-                            Text(showLyrics ? "Скрыть текст" : "Текст песни")
-                                .font(.system(size: 14, weight: .semibold))
-                        }
-                        .foregroundColor(showLyrics ? .white : .white.opacity(0.7))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(showLyrics ? Color.appAccentPink.opacity(0.8) : Color.white.opacity(0.08))
-                        .clipShape(Capsule())
-                    }
-                    
-                    Spacer()
-                    
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    } label: {
-                        Image(systemName: "list.bullet")
-                            .font(.system(size: 18))
-                            .foregroundColor(.white.opacity(0.6))
-                    }
-                }
-                .padding(.horizontal, 30)
-                .padding(.bottom, 24)
+            } label: {
+                Image(systemName: showLyrics ? "quote.bubble.fill" : "quote.bubble")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(showLyrics ? .white : .white.opacity(0.85))
+                    .frame(width: 44, height: 44)
+                    .background(showLyrics ? Color.appAccentPink : Color.white.opacity(0.12))
+                    .clipShape(Circle())
             }
         }
     }
     
-    // MARK: - Cover Art Section
+    // MARK: - Square Proportional Cover Artwork
     
-    private var coverArtSection: some View {
+    private func artworkSection(screenSize: CGSize) -> some View {
         VStack {
             Spacer()
             
             if let track = playerVM.currentTrack {
+                let maxDimension = min(screenSize.width - 56, screenSize.height * 0.38, 330)
+                
                 AsyncImage(url: URL(string: track.thumbnailUrl)) { phase in
                     switch phase {
                     case .success(let image):
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
+                            .frame(width: maxDimension, height: maxDimension)
+                            .clipped()
                     case .empty:
                         ZStack {
                             Color.appSurface
                             ProgressView()
                                 .tint(.appAccentPink)
+                                .scaleEffect(1.2)
                         }
+                        .frame(width: maxDimension, height: maxDimension)
                     case .failure:
                         ZStack {
                             Color.appSurface
                             Image(systemName: "music.note")
-                                .font(.system(size: 60))
+                                .font(.system(size: 64))
                                 .foregroundColor(.appTextSecondary)
                         }
+                        .frame(width: maxDimension, height: maxDimension)
                     @unknown default:
                         Color.appSurface
+                            .frame(width: maxDimension, height: maxDimension)
                     }
                 }
-                .aspectRatio(1.0, contentMode: .fit)
-                .frame(maxWidth: 320, maxHeight: 320)
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .shadow(color: .black.opacity(0.6), radius: 28, x: 0, y: 14)
-                .scaleEffect(playerVM.isPlaying ? 1.0 : 0.92)
-                .animation(.spring(response: 0.45, dampingFraction: 0.7), value: playerVM.isPlaying)
+                .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.65), radius: 30, x: 0, y: 15)
+                .shadow(color: .appAccentPink.opacity(playerVM.isPlaying ? 0.25 : 0), radius: 40, x: 0, y: 10)
+                .scaleEffect(playerVM.isPlaying ? 1.0 : 0.90)
+                .animation(.spring(response: 0.5, dampingFraction: 0.7), value: playerVM.isPlaying)
             }
             
             Spacer()
         }
-        .padding(.horizontal, 24)
     }
     
-    // MARK: - Helper
+    // MARK: - Track Info
+    
+    private func trackInfoRow(track: Track) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            if showLyrics {
+                // Mini album thumbnail when lyrics mode is on
+                AsyncImage(url: URL(string: track.thumbnailUrl)) { phase in
+                    if let image = phase.image {
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        Color.appSurface
+                    }
+                }
+                .frame(width: 50, height: 50)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .shadow(radius: 6)
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(track.title)
+                    .font(.system(size: showLyrics ? 19 : 23, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                
+                Text(track.artist)
+                    .font(.system(size: showLyrics ? 15 : 17, weight: .medium, design: .rounded))
+                    .foregroundColor(.appTextSecondary)
+                    .lineLimit(1)
+            }
+            
+            Spacer()
+            
+            // Heart Save / Favorite
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                libraryVM.toggleSaved(track: track)
+            } label: {
+                Image(systemName: libraryVM.isTrackSaved(track) ? "heart.fill" : "heart")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundColor(libraryVM.isTrackSaved(track) ? .appAccentPink : .white.opacity(0.85))
+                    .scaleEffect(libraryVM.isTrackSaved(track) ? 1.15 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.55), value: libraryVM.isTrackSaved(track))
+                    .frame(width: 44, height: 44)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+    
+    // MARK: - Progress & Timers
+    
+    private var progressSection: some View {
+        VStack(spacing: 8) {
+            PlayerProgressBar()
+            
+            HStack {
+                Text(formatTime(playerVM.currentTime))
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.appTextSecondary)
+                
+                Spacer()
+                
+                Text("-" + formatTime(max(0, playerVM.duration - playerVM.currentTime)))
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.appTextSecondary)
+            }
+        }
+    }
+    
+    // MARK: - Playback Controls
+    
+    private var playbackControlsSection: some View {
+        HStack(spacing: 0) {
+            // Shuffle Button
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                playerVM.toggleShuffle()
+            } label: {
+                Image(systemName: "shuffle")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(playerVM.isShuffled ? .appAccentPink : .white.opacity(0.65))
+                    .frame(width: 44, height: 44)
+            }
+            
+            Spacer()
+            
+            // Previous Track
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                playerVM.previous()
+            } label: {
+                Image(systemName: "backward.fill")
+                    .font(.system(size: 28))
+                    .foregroundColor(.white)
+                    .frame(width: 50, height: 50)
+            }
+            
+            Spacer()
+            
+            // Giant Neon Play / Pause Button
+            Button {
+                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                playerVM.togglePlayPause()
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(Color.appAccentGradient)
+                        .frame(width: 76, height: 76)
+                        .shadow(color: .appAccentPink.opacity(0.55), radius: 18, x: 0, y: 6)
+                    
+                    if playerVM.isLoadingStream {
+                        ProgressView()
+                            .tint(.white)
+                            .scaleEffect(1.25)
+                    } else {
+                        Image(systemName: playerVM.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 32, weight: .semibold))
+                            .foregroundColor(.white)
+                            .offset(x: playerVM.isPlaying ? 0 : 2)
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            // Next Track
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                playerVM.next()
+            } label: {
+                Image(systemName: "forward.fill")
+                    .font(.system(size: 28))
+                    .foregroundColor(.white)
+                    .frame(width: 50, height: 50)
+            }
+            
+            Spacer()
+            
+            // Repeat Button
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                playerVM.toggleRepeat()
+            } label: {
+                Image(systemName: playerVM.repeatMode.icon)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(playerVM.repeatMode.isActive ? .appAccentPink : .white.opacity(0.65))
+                    .frame(width: 44, height: 44)
+            }
+        }
+    }
+    
+    // MARK: - Bottom Utility Bar
+    
+    private var bottomUtilityBar: some View {
+        HStack {
+            // AirPlay indicator (decorative)
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } label: {
+                Image(systemName: "airplayaudio")
+                    .font(.system(size: 19))
+                    .foregroundColor(.white.opacity(0.65))
+                    .frame(width: 44, height: 44)
+            }
+            
+            Spacer()
+            
+            // Synced Lyrics Toggle Button
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    showLyrics.toggle()
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "quote.bubble.fill")
+                        .font(.system(size: 14))
+                    Text(showLyrics ? "Скрыть текст" : "Текст песни")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(showLyrics ? .white : .white.opacity(0.85))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(showLyrics ? Color.appAccentPink : Color.white.opacity(0.12))
+                .clipShape(Capsule())
+            }
+            
+            Spacer()
+            
+            // Queue / Playlist button
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } label: {
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 19))
+                    .foregroundColor(.white.opacity(0.65))
+                    .frame(width: 44, height: 44)
+            }
+        }
+    }
+    
+    // MARK: - Ambient Background
+    
+    private var ambientBackground: some View {
+        ZStack {
+            Color.appBackground.ignoresSafeArea()
+            
+            if let track = playerVM.currentTrack {
+                AsyncImage(url: URL(string: track.thumbnailUrl)) { phase in
+                    if let image = phase.image {
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .blur(radius: 75)
+                            .scaleEffect(1.2)
+                    } else {
+                        Color.appBackgroundSecondary
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                .overlay(Color.black.opacity(0.55))
+            }
+            
+            // Ambient neon light flare
+            RadialGradient(
+                colors: [.appAccentPink.opacity(0.16), .clear],
+                center: .top,
+                startRadius: 20,
+                endRadius: 360
+            )
+            .ignoresSafeArea()
+        }
+        .ignoresSafeArea()
+    }
+    
+    // MARK: - Helpers
+    
+    private func closePlayer() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            playerVM.showFullPlayer = false
+            dismiss()
+        }
+    }
     
     private func formatTime(_ time: TimeInterval) -> String {
         let minutes = Int(time) / 60

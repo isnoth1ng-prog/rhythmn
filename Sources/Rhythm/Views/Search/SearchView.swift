@@ -2,40 +2,27 @@ import SwiftUI
 
 struct SearchView: View {
     @EnvironmentObject var playerVM: PlayerViewModel
+    @EnvironmentObject var libraryVM: LibraryViewModel
     @StateObject private var searchVM = SearchViewModel()
+
+    private let browseGenres: [(title: String, colors: [Color], icon: String)] = [
+        ("Хип-хоп & Рэп", [.appAccentPink, .appAccentPurple], "flame.fill"),
+        ("Поп-хиты", [.appAccentPurple, .appAccentCyan], "star.fill"),
+        ("Электроника", [.appAccentCyan, .blue], "bolt.fill"),
+        ("Рок & Драйв", [.orange, .red], "guitars.fill"),
+        ("Фонк & Басс", [Color(hex: "8A2387"), Color(hex: "E94057")], "speaker.wave.3.fill"),
+        ("Lo-Fi & Чилл", [Color(hex: "11998E"), Color(hex: "38EF7D")], "moon.stars.fill")
+    ]
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 // MARK: - Search Bar
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.appTextSecondary)
+                searchBar
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
 
-                    TextField("", text: $searchVM.query, prompt: Text("Поиск музыки...").foregroundColor(.appTextSecondary))
-                        .foregroundColor(.white)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-
-                    if !searchVM.query.isEmpty {
-                        Button {
-                            searchVM.query = ""
-                            searchVM.search()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.appTextSecondary)
-                        }
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Color.appSurface)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-
-                // MARK: - Search Type Picker
+                // MARK: - Search Type Segmented Control
                 Picker("", selection: $searchVM.searchType) {
                     ForEach(SearchType.allCases, id: \.self) { type in
                         Text(type.rawValue).tag(type)
@@ -45,14 +32,14 @@ struct SearchView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
 
-                // MARK: - Results
+                // MARK: - Body Content
                 if searchVM.query.isEmpty {
-                    emptyState
+                    browseCategoriesView
                 } else if searchVM.isSearching {
                     Spacer()
                     ProgressView()
                         .tint(.appAccentPink)
-                        .scaleEffect(1.2)
+                        .scaleEffect(1.3)
                     Spacer()
                 } else {
                     resultsView
@@ -60,14 +47,14 @@ struct SearchView: View {
             }
             .background(
                 LinearGradient(
-                    colors: [.appBackground, .appBackgroundSecondary],
+                    colors: [Color.appBackground, Color.appBackgroundSecondary],
                     startPoint: .top,
                     endPoint: .bottom
                 )
                 .ignoresSafeArea()
             )
             .navigationTitle("Поиск")
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.large)
             .onChange(of: searchVM.query) { _ in
                 searchVM.search()
             }
@@ -77,34 +64,98 @@ struct SearchView: View {
         }
     }
 
-    // MARK: - Empty State
+    // MARK: - Search Bar Component
+    
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.appAccentPink)
 
-    private var emptyState: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "magnifyingglass.circle")
-                .font(.system(size: 60))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.appAccentPink.opacity(0.6), .appAccentPurple.opacity(0.6)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+            TextField("", text: $searchVM.query, prompt: Text("Треки, артисты, альбомы...").foregroundColor(.appTextSecondary))
+                .foregroundColor(.white)
+                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+
+            if !searchVM.query.isEmpty {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    searchVM.query = ""
+                    searchVM.search()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.white.opacity(0.6))
+                        .font(.system(size: 16))
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
                 )
+        )
+    }
 
-            Text("Введите запрос")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundColor(.appTextSecondary)
+    // MARK: - Browse Categories (When search query is empty)
+    
+    private var browseCategoriesView: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Обзор категорий")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 8)
 
-            Text("Найдите любимую музыку и артистов")
-                .font(.system(size: 14))
-                .foregroundColor(.appTextSecondary.opacity(0.7))
-            Spacer()
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
+                    ForEach(browseGenres, id: \.title) { item in
+                        Button {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            searchVM.query = item.title.components(separatedBy: " ").first ?? item.title
+                            searchVM.search()
+                        } label: {
+                            ZStack(alignment: .bottomLeading) {
+                                LinearGradient(
+                                    colors: item.colors,
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+
+                                // Decorative background icon
+                                Image(systemName: item.icon)
+                                    .font(.system(size: 42, weight: .black))
+                                    .foregroundColor(.white.opacity(0.2))
+                                    .offset(x: 50, y: 10)
+                                    .rotationEffect(.degrees(-15))
+
+                                Text(item.title)
+                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .padding(14)
+                                    .multilineTextAlignment(.leading)
+                            }
+                            .frame(height: 100)
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .shadow(color: item.colors[0].opacity(0.35), radius: 10, x: 0, y: 5)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+
+                Spacer().frame(height: playerVM.currentTrack != nil ? 90 : 30)
+            }
         }
     }
 
-    // MARK: - Results
-
+    // MARK: - Results View
+    
     private var resultsView: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 4) {
@@ -114,9 +165,11 @@ struct SearchView: View {
                         noResultsView
                     } else {
                         ForEach(Array(searchVM.trackResults.enumerated()), id: \.element.id) { index, track in
-                            TrackRowView(track: track) {
+                            TrackRowView(track: track, trackNumber: index + 1) {
                                 playerVM.playQueue(tracks: searchVM.trackResults, startIndex: index)
                             }
+                            .environmentObject(playerVM)
+                            .environmentObject(libraryVM)
                         }
                     }
 
@@ -133,7 +186,7 @@ struct SearchView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, playerVM.currentTrack != nil ? 80 : 16)
+            .padding(.bottom, playerVM.currentTrack != nil ? 90 : 20)
         }
     }
 
@@ -144,28 +197,35 @@ struct SearchView: View {
                 case .success(let image):
                     image
                         .resizable()
-                        .scaledToFill()
-                case .failure:
-                    artistPlaceholder
-                case .empty:
-                    artistPlaceholder
-                        .shimmer(isActive: true)
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 52, height: 52)
+                        .clipped()
+                case .failure, .empty:
+                    ZStack {
+                        Color.appSurface
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.appTextSecondary)
+                    }
+                    .frame(width: 52, height: 52)
                 @unknown default:
-                    artistPlaceholder
+                    Color.appSurface
+                        .frame(width: 52, height: 52)
                 }
             }
-            .frame(width: 50, height: 50)
             .clipShape(Circle())
+            .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+            .shadow(radius: 4)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(artist.name)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                     .lineLimit(1)
 
                 if let subscriberCount = artist.subscriberCount {
                     Text(subscriberCount)
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, design: .rounded))
                         .foregroundColor(.appTextSecondary)
                         .lineLimit(1)
                 }
@@ -174,30 +234,29 @@ struct SearchView: View {
             Spacer()
 
             Image(systemName: "chevron.right")
-                .font(.system(size: 14))
-                .foregroundColor(.appTextSecondary)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.appTextSecondary.opacity(0.6))
         }
         .padding(.vertical, 8)
-    }
-
-    private var artistPlaceholder: some View {
-        Circle()
-            .fill(Color.appSurface)
-            .overlay {
-                Image(systemName: "person.fill")
-                    .foregroundColor(.appTextSecondary)
-            }
+        .padding(.horizontal, 10)
+        .background(Color.white.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var noResultsView: some View {
-        VStack(spacing: 12) {
-            Spacer().frame(height: 60)
-            Image(systemName: "music.note.list")
-                .font(.system(size: 40))
-                .foregroundColor(.appTextSecondary)
+        VStack(spacing: 14) {
+            Spacer().frame(height: 70)
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 44))
+                .foregroundColor(.appTextSecondary.opacity(0.5))
             Text("Ничего не найдено")
-                .font(.system(size: 16, weight: .medium))
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+            Text("Попробуйте изменить запрос или поискать другое имя")
+                .font(.system(size: 14))
                 .foregroundColor(.appTextSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
         }
         .frame(maxWidth: .infinity)
     }
