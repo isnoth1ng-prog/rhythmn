@@ -29,3 +29,8 @@ Thumbs.db
 *.ipa
 Payload/
 *.zip
+
+# Cloudflare & logs
+*.exe
+*.log
+server_url.txt
