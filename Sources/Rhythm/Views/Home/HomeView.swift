@@ -52,7 +52,7 @@ struct HomeView: View {
             .navigationTitle("Главная")
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         showSettings = true
                     } label: {

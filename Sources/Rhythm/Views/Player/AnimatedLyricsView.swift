@@ -71,7 +71,7 @@ struct AnimatedLyricsView: View {
                     endPoint: .bottom
                 )
             )
-            .onChange(of: playerVM.currentLyricIndex) { _, newIndex in
+            .onChange(of: playerVM.currentLyricIndex) { newIndex in
                 if newIndex >= 0 && newIndex < lines.count {
                     withAnimation(.easeInOut(duration: 0.4)) {
                         proxy.scrollTo(lines[newIndex].id, anchor: .center)

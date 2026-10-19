@@ -68,10 +68,10 @@ struct SearchView: View {
             )
             .navigationTitle("Поиск")
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .onChange(of: searchVM.query) { _, _ in
+            .onChange(of: searchVM.query) { _ in
                 searchVM.search()
             }
-            .onChange(of: searchVM.searchType) { _, _ in
+            .onChange(of: searchVM.searchType) { _ in
                 searchVM.search()
             }
         }
